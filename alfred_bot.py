@@ -216,12 +216,40 @@ async def on_ready():
     except Exception as e:
         print(e, flush=True)
 
-@bot.event
+@@bot.event
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
     content_lower = message.content.lower()
+    user_id = str(message.author.id)
+    user_data = get_user_data(user_id)
+    
+    swear_words = [
+    "porra", "caralho", "merda", "foda", "foder", "fud", "puta", "viado", "cu", "buceta",
+    "lixo", "otario", "babaca", "arrombado", "desgraça", "desgraca", "vai se foder", "vsf",
+    "pqp", "filho da puta", "fdp", "cuzão", "cuzao", "retardado", "imbecil", "idiota",
+    "fuck", "shit", "bitch", "asshole", "bastard", "damn", "hell", "crap", "dick",
+    "pussy", "cock", "whore", "slut", "motherfucker", "mf", "stfu", "shut up",
+    "idiot", "stupid", "dumb", "retard", "retarded", "moron", "loser", "trash",
+    "useless", "piece of shit", "go to hell", "fuck you", "fuck off", "screw you",
+    "son of a bitch", "sob", "dumbass", "jackass", "asshat", "prick", "cunt"
+]
+
+    if any(w in content_lower for w in swear_words):
+        update_relationship(user_id, -10, "Used foul language")
+        name = user_data.get("name") or message.author.display_name
+        scold_replies = [
+            f"I must insist, {name}, that we maintain a certain standard of language in this establishment. Such vulgarity is quite unbecoming.",
+            f"Really now, {name}? I expected better manners. Kindly refrain from such uncouth expressions.",
+            f"I beg your pardon, but that language will not do. One does not elevate oneself by descending into the gutter, {name}.",
+            f"Master Bruce would be most disappointed by such language. Do try to conduct yourself with a modicum of dignity, {name}."
+        ]
+        await message.reply(random.choice(scold_replies))
+        await bot.process_commands(message)
+        return
+
+    # Só continua se mencionarem o Alfred
     is_mentioned = bot.user in message.mentions
     has_name = "alfred" in content_lower
 
@@ -278,17 +306,6 @@ async def on_message(message: discord.Message):
         await serve_coffee(message.channel, name, is_slash=False)
         await bot.process_commands(message)
         return
-
-    swear_words = [
-    "porra", "caralho", "merda", "foda", "foder", "fud", "puta", "viado", "cu", "buceta",
-    "lixo", "otario", "babaca", "arrombado", "desgraça", "desgraca", "vai se foder", "vsf",
-    "pqp", "filho da puta", "fdp", "cuzão", "cuzao", "retardado", "imbecil", "idiota",
-    "fuck", "shit", "bitch", "asshole", "bastard", "damn", "hell", "crap", "dick",
-    "pussy", "cock", "whore", "slut", "motherfucker", "mf", "stfu", "shut up",
-    "idiot", "stupid", "dumb", "retard", "retarded", "moron", "loser", "trash",
-    "useless", "piece of shit", "go to hell", "fuck you", "fuck off", "screw you",
-    "son of a bitch", "sob", "dumbass", "jackass", "asshat", "prick", "cunt"
-]
 
     if any(w in content_lower for w in swear_words):
         update_relationship(user_id, -10, "Used foul language")
