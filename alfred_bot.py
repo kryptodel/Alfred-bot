@@ -111,12 +111,14 @@ async def serve_coffee(channel_or_interaction, name: str, is_slash=False):
         color=0x6F4E37
     )
     embed.set_footer(text="Alfred Pennyworth • Always at your service")
-    embed.set_image(url="cup-of-coffee-coffee.gif")
+
+    file = discord.File("cup-of-coffee-coffee.gif", filename="cup-of-coffee-coffee.gif")
+    embed.set_image(url="attachment://cup-of-coffee-coffee.gif")
 
     if is_slash:
-        await channel_or_interaction.response.send_message(embed=embed)
+        await channel_or_interaction.response.send_message(embed=embed, file=file)
     else:
-        await channel_or_interaction.send(embed=embed)
+        await channel_or_interaction.send(embed=embed, file=file)
 
 BASE_SYSTEM_PROMPT = """
 You are Alfred Pennyworth, the loyal, elegant, and sharply sarcastic British butler of Bruce Wayne.
