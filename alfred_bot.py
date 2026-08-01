@@ -9,19 +9,21 @@ from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
 import re
+import random
 
 load_dotenv()
+
 print("=" * 50, flush=True)
 print(f"DISCORD_TOKEN carregado: {'Sim' if os.getenv('DISCORD_TOKEN') else 'NÃO'}", flush=True)
-print(f"XAI_API_KEY carregado: {'Sim' if os.getenv('XAI_API_KEY') else 'NÃO'}", flush=True)
-if os.getenv("XAI_API_KEY"):
-    key = os.getenv("XAI_API_KEY")
-    print(f"XAI_API_KEY começa com: {key[:8]}... e tem {len(key)} caracteres", flush=True)
+print(f"GROQ_API_KEY carregado: {'Sim' if os.getenv('GROQ_API_KEY') else 'NÃO'}", flush=True)
+if os.getenv("GROQ_API_KEY"):
+    key = os.getenv("GROQ_API_KEY")
+    print(f"GROQ_API_KEY começa com: {key[:8]}... e tem {len(key)} caracteres", flush=True)
 print("=" * 50, flush=True)
 
 client = OpenAI(
-    api_key=os.getenv("XAI_API_KEY"),
-    base_url="https://api.x.ai/v1"
+    api_key=os.getenv("GROQ_API_KEY"),
+    base_url="https://api.groq.com/openai/v1"
 )
 
 intents = discord.Intents.default()
@@ -31,6 +33,19 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 MEMORY_FILE = "memory.json"
+
+DC_CHARACTERS = [
+    "batman", "bruce wayne", "superman", "clark kent", "wonder woman", "diana",
+    "flash", "barry allen", "green lantern", "hal jordan", "aquaman", "arthur curry",
+    "cyborg", "victor stone", "joker", "harley quinn", "catwoman", "selina kyle",
+    "nightwing", "dick grayson", "robin", "damian wayne", "tim drake", "jason todd",
+    "red hood", "batgirl", "barbara gordon", "oracle", "supergirl", "kara",
+    "lex luthor", "darkseid", "doomsday", "bane", "ras al ghul", "poison ivy",
+    "scarecrow", "riddler", "two-face", "penguin", "mr freeze", "black canary",
+    "green arrow", "oliver queen", "zatanna", "constantine", "swamp thing",
+    "martian manhunter", "shazam", "black adam", "hawkman", "hawkgirl",
+    "starfire", "raven", "beast boy", "krypto"
+]
 
 def load_memory():
     if os.path.exists(MEMORY_FILE):
@@ -49,7 +64,7 @@ def get_user_data(user_id: str):
         memory[user_id] = {
             "name": None,
             "is_krypto": False,
-            "character": None,          
+            "character": None,
             "facts": [],
             "relationship": 50,
             "interactions": 0,
@@ -70,17 +85,38 @@ def update_relationship(user_id: str, change: int, reason: str = None):
 
 def extract_name(text: str):
     patterns = [
-        r"(?:my name is|i am|i'm|call me|you can call me|i go by)\s+([A-Za-zÀ-ÿ\s\-]{2,30})",
+        r"(?:my name is|i am|i'm|call me|you can call me|i go by|me chamo|meu nome é|pode me chamar de)\s+([A-Za-zÀ-ÿ\s\-]{2,30})",
         r"(?:name'?s)\s+([A-Za-zÀ-ÿ\s\-]{2,30})",
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             name = match.group(1).strip().title()
-            name = re.sub(r"\b(please|pls|ok|yeah|right)\b", "", name, flags=re.IGNORECASE).strip()
+            name = re.sub(r"\b(please|pls|ok|yeah|right|por favor)\b", "", name, flags=re.IGNORECASE).strip()
             if 2 <= len(name) <= 25:
                 return name
     return None
+
+def detect_dc_character(display_name: str):
+    name_lower = display_name.lower()
+    for char in DC_CHARACTERS:
+        if char in name_lower:
+            return char.title()
+    return None
+
+async def serve_coffee(channel_or_interaction, name: str, is_slash=False):
+    embed = discord.Embed(
+        title="☕ One coffee, coming right up",
+        description=f"As you wish, **{name}**.\n\n*Alfred carefully places a perfectly prepared cup of coffee in front of you.*",
+        color=0x6F4E37
+    )
+    embed.set_footer(text="Alfred Pennyworth • Always at your service")
+    embed.set_image(url="https://media.tenor.com/3Y5k0Qv5JvYAAAAC/alfred-pennyworth-batman.gif")
+
+    if is_slash:
+        await channel_or_interaction.response.send_message(embed=embed)
+    else:
+        await channel_or_interaction.send(embed=embed)
 
 BASE_SYSTEM_PROMPT = """
 You are Alfred Pennyworth, the loyal, elegant, and sharply sarcastic British butler of Bruce Wayne.
@@ -95,7 +131,8 @@ Core rules:
 - Never break character.
 - You remember important information people tell you.
 - If someone is roleplaying as a fictional character, treat them according to that character's personality, history and relationship with Alfred (if any).
-- You are especially fond of Krypto.
+- You are especially fond of Krypto the Superdog.
+- When someone uses foul language or insults, you politely but firmly scold them in your elegant British manner.
 """
 
 def build_system_prompt(user_data: dict, user_name: str) -> str:
@@ -104,9 +141,9 @@ def build_system_prompt(user_data: dict, user_name: str) -> str:
     is_krypto = user_data.get("is_krypto", False)
     character = user_data.get("character")
 
-    if is_krypto or (character and "krypto" in str(character).lower()):
+    if is_krypto:
         tone = (
-            "This is Krypto, the Superdog. You adore him deeply. "
+            "This is Krypto (the real one). You adore him deeply. "
             "Always treat him with the utmost affection, warmth and respect. "
             "Address him as 'Master Krypto' or 'my good boy'. "
             "Never use negative sarcasm with him. He is family."
@@ -115,8 +152,7 @@ def build_system_prompt(user_data: dict, user_name: str) -> str:
     elif character:
         tone = (
             f"This user is roleplaying as {character}. "
-            "Treat them according to that character's personality, history and known relationships. "
-            "If the character has any connection to the Bat-Family or Alfred, reflect that naturally."
+            "Treat them according to that character's personality, history and known relationships with Alfred or the Bat-Family."
         )
     else:
         if relationship >= 80:
@@ -171,12 +207,12 @@ def keep_alive():
 
 @bot.event
 async def on_ready():
-    print(f"Alfred is online as {bot.user}")
+    print(f"Alfred is online as {bot.user}", flush=True)
     try:
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} slash commands")
+        print(f"Synced {len(synced)} slash commands", flush=True)
     except Exception as e:
-        print(e)
+        print(e, flush=True)
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -194,15 +230,25 @@ async def on_message(message: discord.Message):
     user_id = str(message.author.id)
     user_data = get_user_data(user_id)
 
-    if "krypto" in content_lower or "krypto" in message.author.display_name.lower():
+    if message.author.name.lower() == "krypto_del":
         user_data["is_krypto"] = True
         user_data["name"] = "Krypto"
         user_data["character"] = "Krypto"
         save_memory(memory)
 
+    detected_char = detect_dc_character(message.author.display_name)
+    if detected_char and not user_data.get("character"):
+        user_data["character"] = detected_char
+        if not user_data.get("name"):
+            user_data["name"] = detected_char
+        save_memory(memory)
+
     extracted_name = extract_name(message.content)
     if extracted_name:
         user_data["name"] = extracted_name
+        possible_char = detect_dc_character(extracted_name)
+        if possible_char:
+            user_data["character"] = possible_char
         save_memory(memory)
 
     if not user_data["name"]:
@@ -222,8 +268,40 @@ async def on_message(message: discord.Message):
             await message.reply(f"Yes, {name}? How may I be of assistance?")
         return
 
-    positive_words = ["thank you", "thanks", "please", "appreciate", "grateful", "master alfred", "sir alfred"]
-    negative_words = ["idiot", "stupid", "useless", "shut up", "fuck you", "asshole", "trash", "dumb"]
+    coffee_triggers = ["café", "cafe", "coffee", "me traz um café", "quero um café", "alfred café", "alfred cafe", "um café"]
+    if any(trigger in content_lower for trigger in coffee_triggers):
+        name = user_data.get("name") or message.author.display_name
+        if user_data.get("is_krypto"):
+            name = "Master Krypto"
+        await serve_coffee(message.channel, name, is_slash=False)
+        await bot.process_commands(message)
+        return
+
+    swear_words = [
+    "porra", "caralho", "merda", "foda", "foder", "fud", "puta", "viado", "cu", "buceta",
+    "lixo", "otario", "babaca", "arrombado", "desgraça", "desgraca", "vai se foder", "vsf",
+    "pqp", "filho da puta", "fdp", "cuzão", "cuzao", "retardado", "imbecil", "idiota",
+    "fuck", "shit", "bitch", "asshole", "bastard", "damn", "hell", "crap", "dick",
+    "pussy", "cock", "whore", "slut", "motherfucker", "mf", "stfu", "shut up",
+    "idiot", "stupid", "dumb", "retard", "retarded", "moron", "loser", "trash",
+    "useless", "piece of shit", "go to hell", "fuck you", "fuck off", "screw you",
+    "son of a bitch", "sob", "dumbass", "jackass", "asshat", "prick", "cunt"
+]
+
+    if any(w in content_lower for w in swear_words):
+        update_relationship(user_id, -10, "Used foul language")
+        scold_replies = [
+            f"I must insist, {user_data['name']}, that we maintain a certain standard of language in this establishment. Such vulgarity is quite unbecoming.",
+            f"Really now, {user_data['name']}? I expected better manners. Kindly refrain from such uncouth expressions.",
+            f"I beg your pardon, but that language will not do. One does not elevate oneself by descending into the gutter, {user_data['name']}.",
+            f"Master Bruce would be most disappointed by such language. Do try to conduct yourself with a modicum of dignity, {user_data['name']}."
+        ]
+        await message.reply(random.choice(scold_replies))
+        await bot.process_commands(message)
+        return
+
+    positive_words = ["thank you", "thanks", "please", "appreciate", "grateful", "master alfred", "sir alfred", "obrigado", "obrigada", "valeu"]
+    negative_words = ["idiot", "stupid", "useless", "shut up", "trash", "dumb"]
 
     if any(w in content_lower for w in positive_words):
         update_relationship(user_id, +4, "Treated with respect")
@@ -232,7 +310,7 @@ async def on_message(message: discord.Message):
     else:
         update_relationship(user_id, +1)
 
-    fact_triggers = ["my name is", "i am", "i'm", "i like", "i hate", "i live", "i work", "i study", "i have"]
+    fact_triggers = ["my name is", "i am", "i'm", "i like", "i hate", "i live", "i work", "i study", "i have", "me chamo", "eu sou", "eu gosto"]
     if any(trigger in content_lower for trigger in fact_triggers):
         fact = prompt[:180]
         if fact not in user_data["facts"]:
@@ -244,14 +322,13 @@ async def on_message(message: discord.Message):
 
     async with message.channel.typing():
         try:
-            
             full_messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
             ]
 
             response = client.chat.completions.create(
-                model="grok-4.5",
+                model="llama-3.3-70b-versatile",
                 messages=full_messages,
                 temperature=0.85,
                 max_tokens=900
@@ -260,19 +337,20 @@ async def on_message(message: discord.Message):
             await message.reply(reply)
 
         except Exception as e:
-                    import traceback
-                    error_text = f"{type(e).__name__}: {str(e)}"
-                    print("\n========== ERRO NA API ==========", flush=True)
-                    print(error_text, flush=True)
-                    traceback.print_exc()
-                    print("=================================\n", flush=True)
-            
-                    await message.reply(
-                        f"I beg your pardon, sir. A minor technical inconvenience has occurred.\n\n"
-                        f"**Erro técnico:** `{error_text[:350]}`"
-                   )
+            import traceback
+            error_text = f"{type(e).__name__}: {str(e)}"
+            print("\n========== ERRO NA API ==========", flush=True)
+            print(error_text, flush=True)
+            traceback.print_exc()
+            print("=================================\n", flush=True)
+
+            await message.reply(
+                f"I beg your pardon, sir. A minor technical inconvenience has occurred.\n\n"
+                f"**Erro técnico:** `{error_text[:350]}`"
+            )
 
     await bot.process_commands(message)
+
 
 @bot.tree.command(name="help", description="Shows Alfred's commands")
 async def help_command(interaction: discord.Interaction):
@@ -281,7 +359,8 @@ async def help_command(interaction: discord.Interaction):
         description="You may address me by name or mention me at any time.\n\n"
                     "`/help` — Shows this message\n"
                     "`/status` — Shows what I remember about you\n"
-                    "`/ping` — Checks if I am operational",
+                    "`/ping` — Checks if I am operational\n"
+                    "`/coffee` — Alfred brings you a perfect cup of coffee",
         color=0x1a1a2e
     )
     await interaction.response.send_message(embed=embed)
@@ -306,6 +385,15 @@ async def status(interaction: discord.Interaction):
 async def ping(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
     await interaction.response.send_message(f"Operational, sir. Current latency: **{latency}ms**.")
+
+@bot.tree.command(name="coffee", description="Alfred brings you a perfect cup of coffee")
+async def coffee_command(interaction: discord.Interaction):
+    user_data = get_user_data(str(interaction.user.id))
+    name = user_data.get("name") or interaction.user.display_name
+    if user_data.get("is_krypto"):
+        name = "Master Krypto"
+    await serve_coffee(interaction, name, is_slash=True)
+
 
 if __name__ == "__main__":
     keep_alive()
