@@ -111,7 +111,7 @@ async def serve_coffee(channel_or_interaction, name: str, is_slash=False):
         color=0x6F4E37
     )
     embed.set_footer(text="Alfred Pennyworth • Always at your service")
-    embed.set_image(url="https://media.tenor.com/3Y5k0Qv5JvYAAAAC/alfred-pennyworth-batman.gif")
+    embed.set_image(url="cup-of-coffee-coffee.gif")
 
     if is_slash:
         await channel_or_interaction.response.send_message(embed=embed)
