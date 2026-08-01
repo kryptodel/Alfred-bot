@@ -11,6 +11,13 @@ from threading import Thread
 import re
 
 load_dotenv()
+print("=" * 50, flush=True)
+print(f"DISCORD_TOKEN carregado: {'Sim' if os.getenv('DISCORD_TOKEN') else 'NÃO'}", flush=True)
+print(f"XAI_API_KEY carregado: {'Sim' if os.getenv('XAI_API_KEY') else 'NÃO'}", flush=True)
+if os.getenv("XAI_API_KEY"):
+    key = os.getenv("XAI_API_KEY")
+    print(f"XAI_API_KEY começa com: {key[:8]}... e tem {len(key)} caracteres", flush=True)
+print("=" * 50, flush=True)
 
 client = OpenAI(
     api_key=os.getenv("XAI_API_KEY"),
