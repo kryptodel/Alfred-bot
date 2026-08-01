@@ -260,8 +260,17 @@ async def on_message(message: discord.Message):
             await message.reply(reply)
 
         except Exception as e:
-            await message.reply("I beg your pardon, sir. A minor technical inconvenience has occurred.")
-            print(f"Error: {e}")
+    import traceback
+    error_text = f"{type(e).__name__}: {str(e)}"
+    print("\n========== ERRO NA API ==========", flush=True)
+    print(error_text, flush=True)
+    traceback.print_exc()
+    print("=================================\n", flush=True)
+    
+    await message.reply(
+        f"I beg your pardon, sir. A minor technical inconvenience has occurred.\n\n"
+        f"**Erro técnico:** `{error_text[:350]}`"
+    )
 
     await bot.process_commands(message)
 
