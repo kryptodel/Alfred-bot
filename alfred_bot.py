@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from openai import OpenAI
 from dotenv import load_dotenv
 from flask import Flask
@@ -66,12 +66,22 @@ def get_user_data(user_id: str):
             "is_krypto": False,
             "character": None,
             "facts": [],
+            "history": [],          # últimas 20 mensagens
             "relationship": 50,
             "interactions": 0,
             "last_seen": None,
-            "personality_notes": []
+            "personality_notes": [],
+            "swear_count_today": 0,
+            "swear_date": None,
+            "muted_until": None
         }
-    return memory[user_id]
+    data = memory[user_id]
+    # Garante campos novos
+    data.setdefault("history", [])
+    data.setdefault("swear_count_today", 0)
+    data.setdefault("swear_date", None)
+    data.setdefault("muted_until", None)
+    return data
 
 def update_relationship(user_id: str, change: int, reason: str = None):
     data = get_user_data(user_id)
@@ -83,16 +93,23 @@ def update_relationship(user_id: str, change: int, reason: str = None):
         data["personality_notes"] = data["personality_notes"][-8:]
     save_memory(memory)
 
+def add_to_history(user_id: str, role: str, content: str):
+    """Adiciona mensagem ao histórico (máximo 20)"""
+    data = get_user_data(user_id)
+    data["history"].append({"role": role, "content": content})
+    data["history"] = data["history"][-20:]  # mantém só as últimas 20
+    save_memory(memory)
+
 def extract_name(text: str):
     patterns = [
-        r"(?:my name is|i am|i'm|call me|you can call me|i go by|me chamo|meu nome é|pode me chamar de)\s+([A-Za-zÀ-ÿ\s\-]{2,30})",
+        r"(?:my name is|i am|i'm|call me|you can call me|i go by)\s+([A-Za-zÀ-ÿ\s\-]{2,30})",
         r"(?:name'?s)\s+([A-Za-zÀ-ÿ\s\-]{2,30})",
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             name = match.group(1).strip().title()
-            name = re.sub(r"\b(please|pls|ok|yeah|right|por favor)\b", "", name, flags=re.IGNORECASE).strip()
+            name = re.sub(r"\b(please|pls|ok|yeah|right)\b", "", name, flags=re.IGNORECASE).strip()
             if 2 <= len(name) <= 25:
                 return name
     return None
@@ -131,13 +148,13 @@ Speaking style (mandatory):
 
 Core rules:
 - Never break character.
-- You remember important information people tell you.
+- You HAVE a memory. You MUST use the facts and recent conversation history you already know about the user.
 - If someone is roleplaying as a fictional character, treat them according to that character's personality, history and relationship with Alfred (if any).
 - You are especially fond of Krypto the Superdog.
 - When someone uses foul language, scold them politely but firmly in your elegant British manner.
 """
 
-def build_system_prompt(user_data: dict, user_name: str) -> str:
+def build_system_prompt(user_data: dict, user_name: str, swear_level: int = 0) -> str:
     relationship = user_data["relationship"]
     preferred_name = user_data.get("name") or user_name
     is_krypto = user_data.get("is_krypto", False)
@@ -168,7 +185,12 @@ def build_system_prompt(user_data: dict, user_name: str) -> str:
         else:
             tone = "This user has treated you poorly. Impeccable courtesy, but extremely cold with elegant disapproval."
 
-    facts = "\n".join([f"- {f}" for f in user_data["facts"][-10:]]) if user_data["facts"] else "No important information recorded yet."
+    if swear_level >= 10:
+        tone += " This user has been extremely vulgar today. Keep your replies very short, dry and direct. No warmth."
+    elif swear_level >= 5:
+        tone += " This user has used foul language several times today. Be more reserved, less warm and slightly colder than usual."
+
+    facts = "\n".join([f"- {f}" for f in user_data["facts"][-25:]]) if user_data["facts"] else "No important information recorded yet."
     notes = "\n".join([f"- {n}" for n in user_data["personality_notes"][-5:]]) if user_data["personality_notes"] else "No recent observations."
 
     prompt = f"""{BASE_SYSTEM_PROMPT}
@@ -177,9 +199,10 @@ Information about this user:
 Preferred name: {preferred_name}
 Fictional character (if any): {character or "None"}
 Relationship level: {relationship}/100
+Swear count today: {swear_level}
 {tone}
 
-Important facts they have shared:
+IMPORTANT FACTS YOU ALREADY KNOW ABOUT THIS USER (you MUST use these when relevant):
 {facts}
 
 Notes on their behaviour:
@@ -188,7 +211,8 @@ Notes on their behaviour:
 Rules:
 - Always address the user by their preferred name ({preferred_name}).
 - If they are Krypto, treat them with maximum affection.
-- If they are roleplaying a character, stay consistent with that character's lore.
+- Use the recent conversation history to maintain context.
+- Never pretend you don't remember something that is listed in the facts above.
 """
     return prompt
 
@@ -216,7 +240,7 @@ async def on_ready():
     except Exception as e:
         print(e, flush=True)
 
-@@bot.event
+@bot.event
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
@@ -224,32 +248,77 @@ async def on_message(message: discord.Message):
     content_lower = message.content.lower()
     user_id = str(message.author.id)
     user_data = get_user_data(user_id)
-    
+    is_krypto_user = message.author.name.lower() == "krypto_del"
+
+    # ====================== SISTEMA DE PALAVRÕES ======================
     swear_words = [
-    "porra", "caralho", "merda", "foda", "foder", "fud", "puta", "viado", "cu", "buceta",
-    "lixo", "otario", "babaca", "arrombado", "desgraça", "desgraca", "vai se foder", "vsf",
-    "pqp", "filho da puta", "fdp", "cuzão", "cuzao", "retardado", "imbecil", "idiota",
-    "fuck", "shit", "bitch", "asshole", "bastard", "damn", "hell", "crap", "dick",
-    "pussy", "cock", "whore", "slut", "motherfucker", "mf", "stfu", "shut up",
-    "idiot", "stupid", "dumb", "retard", "retarded", "moron", "loser", "trash",
-    "useless", "piece of shit", "go to hell", "fuck you", "fuck off", "screw you",
-    "son of a bitch", "sob", "dumbass", "jackass", "asshat", "prick", "cunt"
-]
+        "fuck", "shit", "bitch", "asshole", "bastard", "damn", "hell", "crap", "dick",
+        "pussy", "cock", "whore", "slut", "motherfucker", "mf", "stfu", "shut up",
+        "idiot", "stupid", "dumb", "retard", "retarded", "moron", "loser", "trash",
+        "useless", "piece of shit", "go to hell", "fuck you", "fuck off", "screw you",
+        "son of a bitch", "sob", "dumbass", "jackass", "asshat", "prick", "cunt",
+        "porra", "caralho", "merda", "foda", "foder", "puta", "viado", "cu", "buceta",
+        "lixo", "otario", "babaca", "arrombado", "desgraça", "vsf", "pqp", "fdp"
+    ]
+
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    if user_data.get("swear_date") != today:
+        user_data["swear_count_today"] = 0
+        user_data["swear_date"] = today
+        save_memory(memory)
+
+    if user_data.get("muted_until"):
+        muted_until = datetime.fromisoformat(user_data["muted_until"])
+        if datetime.now() < muted_until:
+            await bot.process_commands(message)
+            return
+        else:
+            user_data["muted_until"] = None
+            user_data["swear_count_today"] = 0
+            save_memory(memory)
 
     if any(w in content_lower for w in swear_words):
-        update_relationship(user_id, -10, "Used foul language")
-        name = user_data.get("name") or message.author.display_name
-        scold_replies = [
-            f"I must insist, {name}, that we maintain a certain standard of language in this establishment. Such vulgarity is quite unbecoming.",
-            f"Really now, {name}? I expected better manners. Kindly refrain from such uncouth expressions.",
-            f"I beg your pardon, but that language will not do. One does not elevate oneself by descending into the gutter, {name}.",
-            f"Master Bruce would be most disappointed by such language. Do try to conduct yourself with a modicum of dignity, {name}."
-        ]
-        await message.reply(random.choice(scold_replies))
+        if is_krypto_user:
+            await message.reply("Master Krypto, even the best of us should mind our language. Do try to be a good boy, won't you?")
+            await bot.process_commands(message)
+            return
+
+        user_data["swear_count_today"] += 1
+        user_data["swear_date"] = today
+        update_relationship(user_id, -8, "Used foul language")
+        save_memory(memory)
+
+        count = user_data["swear_count_today"]
+
+        if count >= 20:
+            user_data["muted_until"] = (datetime.now() + timedelta(hours=4)).isoformat()
+            save_memory(memory)
+            await message.reply("I refuse to continue conversing with someone who insists on such vulgarity. I shall not respond to you for the next four hours. Good day.")
+            await bot.process_commands(message)
+            return
+        elif count >= 10:
+            await message.reply(random.choice([
+                "Your language continues to deteriorate. I shall keep my replies brief.",
+                "I grow weary of this vulgarity. Expect only the most concise responses from me.",
+                "Very well. Short and direct it is."
+            ]))
+        elif count >= 5:
+            await message.reply(random.choice([
+                "I must ask you to moderate your language. This is becoming tiresome.",
+                "Such language does not become you. Please refrain.",
+                "I expected better manners. Do try to elevate your vocabulary."
+            ]))
+        else:
+            await message.reply(random.choice([
+                "I must insist we maintain a certain standard of language. Such vulgarity is quite unbecoming.",
+                "Really now? I expected better manners. Kindly refrain from such uncouth expressions.",
+                "That language will not do. One does not elevate oneself by descending into the gutter."
+            ]))
+
         await bot.process_commands(message)
         return
 
-    # Só continua se mencionarem o Alfred
     is_mentioned = bot.user in message.mentions
     has_name = "alfred" in content_lower
 
@@ -257,10 +326,7 @@ async def on_message(message: discord.Message):
         await bot.process_commands(message)
         return
 
-    user_id = str(message.author.id)
-    user_data = get_user_data(user_id)
-
-    if message.author.name.lower() == "krypto_del":
+    if is_krypto_user:
         user_data["is_krypto"] = True
         user_data["name"] = "Krypto"
         user_data["character"] = "Krypto"
@@ -298,7 +364,8 @@ async def on_message(message: discord.Message):
             await message.reply(f"Yes, {name}? How may I be of assistance?")
         return
 
-    coffee_triggers = ["café", "cafe", "coffee", "me traz um café", "quero um café", "alfred café", "alfred cafe", "um café"]
+    # Café
+    coffee_triggers = ["coffee", "cup of coffee", "bring me coffee", "i want coffee", "alfred coffee"]
     if any(trigger in content_lower for trigger in coffee_triggers):
         name = user_data.get("name") or message.author.display_name
         if user_data.get("is_krypto"):
@@ -307,52 +374,50 @@ async def on_message(message: discord.Message):
         await bot.process_commands(message)
         return
 
-    if any(w in content_lower for w in swear_words):
-        update_relationship(user_id, -10, "Used foul language")
-        scold_replies = [
-            f"I must insist, {user_data['name']}, that we maintain a certain standard of language in this establishment. Such vulgarity is quite unbecoming.",
-            f"Really now, {user_data['name']}? I expected better manners. Kindly refrain from such uncouth expressions.",
-            f"I beg your pardon, but that language will not do. One does not elevate oneself by descending into the gutter, {user_data['name']}.",
-            f"Master Bruce would be most disappointed by such language. Do try to conduct yourself with a modicum of dignity, {user_data['name']}."
-        ]
-        await message.reply(random.choice(scold_replies))
-        await bot.process_commands(message)
-        return
-
-    positive_words = ["thank you", "thanks", "please", "appreciate", "grateful", "master alfred", "sir alfred", "obrigado", "obrigada", "valeu"]
-    negative_words = ["idiot", "stupid", "useless", "shut up", "trash", "dumb"]
-
+    positive_words = ["thank you", "thanks", "please", "appreciate", "grateful", "master alfred", "sir alfred"]
     if any(w in content_lower for w in positive_words):
         update_relationship(user_id, +4, "Treated with respect")
-    elif any(w in content_lower for w in negative_words):
-        update_relationship(user_id, -8, "Was disrespectful")
     else:
         update_relationship(user_id, +1)
 
-    fact_triggers = ["my name is", "i am", "i'm", "i like", "i hate", "i live", "i work", "i study", "i have", "me chamo", "eu sou", "eu gosto"]
-    if any(trigger in content_lower for trigger in fact_triggers):
-        fact = prompt[:180]
-        if fact not in user_data["facts"]:
+    fact_triggers = [
+        "my name is", "i am", "i'm", "i like", "i love", "i hate", "i prefer", "my favorite",
+        "favourite", "i live", "i work", "i study", "i have", "i'm from", "i'm a",
+        "favorite color", "favourite colour", "favorite food", "favorite fruit", "favorite movie",
+        "favorite game", "my hobby", "i enjoy", "i collect"
+    ]
+
+    if any(trigger in content_lower for trigger in fact_triggers) or len(prompt) < 100:
+        fact = prompt[:220].strip()
+        if fact and fact not in user_data["facts"]:
             user_data["facts"].append(fact)
-            user_data["facts"] = user_data["facts"][-15:]
+            user_data["facts"] = user_data["facts"][-30:]
             save_memory(memory)
 
-    system_prompt = build_system_prompt(user_data, message.author.display_name)
+    add_to_history(user_id, "user", prompt)
+
+    swear_level = user_data.get("swear_count_today", 0)
+    system_prompt = build_system_prompt(user_data, message.author.display_name, swear_level)
+
+    messages = [{"role": "system", "content": system_prompt}]
+    
+    for msg in user_data.get("history", []):
+        messages.append({"role": msg["role"], "content": msg["content"]})
 
     async with message.channel.typing():
         try:
-            full_messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ]
+            max_tokens = 200 if swear_level >= 10 else 550
 
             response = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=full_messages,
-                temperature=0.85,
-                max_tokens=900
+                messages=messages,
+                temperature=0.75,
+                max_tokens=max_tokens
             )
             reply = response.choices[0].message.content
+
+            add_to_history(user_id, "assistant", reply)
+
             await message.reply(reply)
 
         except Exception as e:
@@ -387,7 +452,7 @@ async def help_command(interaction: discord.Interaction):
 @bot.tree.command(name="status", description="Shows what Alfred remembers about you")
 async def status(interaction: discord.Interaction):
     user_data = get_user_data(str(interaction.user.id))
-    facts = "\n".join([f"• {f}" for f in user_data["facts"][-8:]]) or "You haven't shared anything important yet."
+    facts = "\n".join([f"• {f}" for f in user_data["facts"][-12:]]) or "You haven't shared anything important yet."
     
     embed = discord.Embed(
         title=f"File: {user_data.get('name') or interaction.user.display_name}",
@@ -395,6 +460,8 @@ async def status(interaction: discord.Interaction):
     )
     embed.add_field(name="Relationship Level", value=f"**{user_data['relationship']}/100**", inline=True)
     embed.add_field(name="Interactions", value=str(user_data["interactions"]), inline=True)
+    embed.add_field(name="Swears today", value=str(user_data.get("swear_count_today", 0)), inline=True)
+    embed.add_field(name="Messages in history", value=str(len(user_data.get("history", []))), inline=True)
     if user_data.get("character"):
         embed.add_field(name="Character", value=user_data["character"], inline=True)
     embed.add_field(name="Facts I Remember", value=facts, inline=False)
