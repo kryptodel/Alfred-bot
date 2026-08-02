@@ -226,8 +226,7 @@ def keep_alive():
 @bot.event
 async def on_ready():
     print(f"Alfred is online as {bot.user}", flush=True)
-    try:
-        await bot.load_extension("batmobile")   
+    try:   
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} slash commands", flush=True)
     except Exception as e:
