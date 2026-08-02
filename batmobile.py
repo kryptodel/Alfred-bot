@@ -9,7 +9,7 @@ async def prepare_batmobile(channel_or_interaction, name: str, is_slash=False):
     )
     embed.set_footer(text="Alfred Pennyworth • Always at your service")
 
-    file = discord.File("batman-batmóvel.gif", filename="batman-batmóvel.gif)
+    file = discord.File("batman-batmóvel.gif", filename="batman-batmóvel.gif")
     embed.set_image(url="attachment://batman-batmóvel.gif")
 
     if is_slash:
