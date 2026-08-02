@@ -225,6 +225,7 @@ def keep_alive():
 async def on_ready():
     print(f"Alfred is online as {bot.user}", flush=True)
     try:
+        await bot.load_extension("batmobile")   
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} slash commands", flush=True)
     except Exception as e:
@@ -466,13 +467,3 @@ async def coffee_command(interaction: discord.Interaction):
 if __name__ == "__main__":
     keep_alive()
     bot.run(os.getenv("DISCORD_TOKEN"))
-
-@bot.event
-async def on_ready():
-    print(f"Alfred is online as {bot.user}", flush=True)
-    try:
-        await bot.load_extension("batmobile")   
-        synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} slash commands", flush=True)
-    except Exception as e:
-        print(e, flush=True)
