@@ -10,6 +10,7 @@ from flask import Flask
 from threading import Thread
 import re
 import random
+from batmobile import prepare_batmobile
 
 load_dotenv()
 
@@ -184,6 +185,7 @@ def build_system_prompt(user_data: dict, user_name: str, swear_level: int = 0) -
     notes = "\n".join([f"- {n}" for n in user_data["personality_notes"][-5:]]) if user_data["personality_notes"] else "No recent observations."
 
     prompt = f"""{BASE_SYSTEM_PROMPT}
+    
 
 Information about this user:
 Preferred name: {preferred_name}
@@ -363,6 +365,18 @@ async def on_message(message: discord.Message):
         await bot.process_commands(message)
         return
 
+    batmobile_triggers = [
+        "batmobile", "bat mobile", "prepare the batmobile", "ready the batmobile",
+        "bring the batmobile", "prepare batmobile", "ready batmobile", "get the batmobile"
+    ]
+    if any(trigger in content_lower for trigger in batmobile_triggers):
+        name = user_data.get("name") or message.author.display_name
+        if user_data.get("is_krypto"):
+            name = "Master Krypto"
+        await prepare_batmobile(message.channel, name, is_slash=False)
+        await bot.process_commands(message)
+        return
+
     positive_words = ["thank you", "thanks", "please", "appreciate", "grateful", "master alfred", "sir alfred"]
     if any(w in content_lower for w in positive_words):
         update_relationship(user_id, +4, "Treated with respect")
@@ -462,6 +476,8 @@ async def coffee_command(interaction: discord.Interaction):
     if user_data.get("is_krypto"):
         name = "Master Krypto"
     await serve_coffee(interaction, name, is_slash=True)
+
+
 
 
 if __name__ == "__main__":
