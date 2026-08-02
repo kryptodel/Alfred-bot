@@ -19,12 +19,10 @@ print(f"DISCORD_TOKEN     : {'Sim' if os.getenv('DISCORD_TOKEN') else 'NÃO'}", 
 print(f"GROQ_API_KEY      : {'Sim' if os.getenv('GROQ_API_KEY') else 'NÃO'}", flush=True)
 print(f"GEMINI_API_KEY    : {'Sim' if os.getenv('GEMINI_API_KEY') else 'NÃO'}", flush=True)
 print(f"OPENROUTER_API_KEY: {'Sim' if os.getenv('OPENROUTER_API_KEY') else 'NÃO'}", flush=True)
-print(f"CEREBRAS_API_KEY  : {'Sim' if os.getenv('CEREBRAS_API_KEY') else 'NÃO'}", flush=True)
 print(f"MISTRAL_API_KEY   : {'Sim' if os.getenv('MISTRAL_API_KEY') else 'NÃO'}", flush=True)
 print(f"LOGFARE_API_KEY   : {'Sim' if os.getenv('LOGFARE_API_KEY') else 'NÃO'}", flush=True)
 print("=" * 60, flush=True)
 
-# ====================== CLIENTES ======================
 groq_client = OpenAI(
     api_key=os.getenv("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1",
@@ -43,12 +41,6 @@ openrouter_client = OpenAI(
     timeout=30.0
 )
 
-cerebras_client = OpenAI(
-    api_key=os.getenv("CEREBRAS_API_KEY"),
-    base_url="https://api.cerebras.ai/v1",
-    timeout=30.0
-)
-
 mistral_client = OpenAI(
     api_key=os.getenv("MISTRAL_API_KEY"),
     base_url="https://api.mistral.ai/v1",
@@ -60,8 +52,6 @@ logfare_client = OpenAI(
     base_url="https://logfare.ai/v1",
     timeout=30.0
 )
-
-# ====================== FALLBACK ======================
 async def get_ai_response(messages: list, max_tokens: int = 550):
     providers = [
         {
@@ -77,12 +67,7 @@ async def get_ai_response(messages: list, max_tokens: int = 550):
         {
             "name": "OpenRouter",
             "client": openrouter_client,
-            "model": "meta-llama/llama-3.3-70b-instruct:free"   # modelo free
-        },
-        {
-            "name": "Cerebras",
-            "client": cerebras_client,
-            "model": "llama-3.3-70b"
+            "model": "meta-llama/llama-3.3-70b-instruct:free"
         },
         {
             "name": "Mistral",
@@ -99,7 +84,6 @@ async def get_ai_response(messages: list, max_tokens: int = 550):
     last_error = None
 
     for provider in providers:
-        # Pula se a chave não existir
         if not provider["client"].api_key:
             print(f"Pulando {provider['name']} (sem chave)", flush=True)
             continue
@@ -120,8 +104,7 @@ async def get_ai_response(messages: list, max_tokens: int = 550):
             continue
 
     raise last_error
-
-
+    
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
