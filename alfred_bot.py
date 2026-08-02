@@ -16,17 +16,71 @@ load_dotenv()
 
 print("=" * 50, flush=True)
 print(f"DISCORD_TOKEN carregado: {'Sim' if os.getenv('DISCORD_TOKEN') else 'NÃO'}", flush=True)
+print(f"GROQ_API_KEY carregado: {'Sim' if os.getenv('GROQ_API_KEY') else 'NÃO'}", flush=True)
 print(f"LOGFARE_API_KEY carregado: {'Sim' if os.getenv('LOGFARE_API_KEY') else 'NÃO'}", flush=True)
-if os.getenv("LOGFARE_API_KEY"):
-    key = os.getenv("LOGFARE_API_KEY")
-    print(f"LOGFARE_API_KEY começa com: {key[:8]}... e tem {len(key)} caracteres", flush=True)
+print(f"GEMINI_API_KEY carregado: {'Sim' if os.getenv('GEMINI_API_KEY') else 'NÃO'}", flush=True)
 print("=" * 50, flush=True)
 
-client = OpenAI(
+groq_client = OpenAI(
+    api_key=os.getenv("GROQ_API_KEY"),
+    base_url="https://api.groq.com/openai/v1",
+    timeout=30.0
+)
+
+logfare_client = OpenAI(
     api_key=os.getenv("LOGFARE_API_KEY"),
     base_url="https://logfare.ai/v1",
-    timeout=30.0          
-    )
+    timeout=30.0
+)
+
+gemini_client = OpenAI(
+    api_key=os.getenv("GEMINI_API_KEY"),
+    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+    timeout=30.0
+)
+
+async def get_ai_response(messages: list, max_tokens: int = 550):
+    """
+    Tenta as 3 APIs em ordem. Se uma falhar, tenta a próxima.
+    """
+    providers = [
+        {
+            "name": "Groq",
+            "client": groq_client,
+            "model": "llama-3.3-70b-versatile"
+        },
+        {
+            "name": "Logfare",
+            "client": logfare_client,
+            "model": "deepseek-v4-flash"
+        },
+        {
+            "name": "Gemini",
+            "client": gemini_client,
+            "model": "gemini-2.0-flash"
+        },
+    ]
+
+    last_error = None
+
+    for provider in providers:
+        try:
+            print(f"Tentando {provider['name']}...", flush=True)
+            response = provider["client"].chat.completions.create(
+                model=provider["model"],
+                messages=messages,
+                temperature=0.75,
+                max_tokens=max_tokens
+            )
+            print(f"{provider['name']} respondeu com sucesso!", flush=True)
+            return response.choices[0].message.content
+        except Exception as e:
+            last_error = e
+            print(f"{provider['name']} falhou: {type(e).__name__}: {e}", flush=True)
+            continue
+
+    raise last_error
+
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -409,13 +463,7 @@ async def on_message(message: discord.Message):
 
             max_tokens = 200 if swear_level >= 10 else 550
 
-            response = client.chat.completions.create(
-                model="qwen-3.6-35b-a3b",          
-                messages=full_messages,
-                temperature=0.75,
-                max_tokens=max_tokens
-            )
-            reply = response.choices[0].message.content
+            reply = await get_ai_response(full_messages, max_tokens)
             await message.reply(reply)
 
         except Exception as e:
@@ -427,7 +475,7 @@ async def on_message(message: discord.Message):
             print("=================================\n", flush=True)
 
             await message.reply(
-                f"I beg your pardon, sir. A minor technical inconvenience has occurred.\n\n"
+                f"I beg your pardon, sir. All my AI services are currently unavailable.\n\n"
                 f"**Erro técnico:** `{error_text[:350]}`"
             )
 
