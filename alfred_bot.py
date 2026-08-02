@@ -14,22 +14,20 @@ from batmobile import prepare_batmobile
 
 load_dotenv()
 
-print("=" * 50, flush=True)
-print(f"DISCORD_TOKEN carregado: {'Sim' if os.getenv('DISCORD_TOKEN') else 'NÃO'}", flush=True)
-print(f"GROQ_API_KEY carregado: {'Sim' if os.getenv('GROQ_API_KEY') else 'NÃO'}", flush=True)
-print(f"LOGFARE_API_KEY carregado: {'Sim' if os.getenv('LOGFARE_API_KEY') else 'NÃO'}", flush=True)
-print(f"GEMINI_API_KEY carregado: {'Sim' if os.getenv('GEMINI_API_KEY') else 'NÃO'}", flush=True)
-print("=" * 50, flush=True)
+print("=" * 60, flush=True)
+print(f"DISCORD_TOKEN     : {'Sim' if os.getenv('DISCORD_TOKEN') else 'NÃO'}", flush=True)
+print(f"GROQ_API_KEY      : {'Sim' if os.getenv('GROQ_API_KEY') else 'NÃO'}", flush=True)
+print(f"GEMINI_API_KEY    : {'Sim' if os.getenv('GEMINI_API_KEY') else 'NÃO'}", flush=True)
+print(f"OPENROUTER_API_KEY: {'Sim' if os.getenv('OPENROUTER_API_KEY') else 'NÃO'}", flush=True)
+print(f"CEREBRAS_API_KEY  : {'Sim' if os.getenv('CEREBRAS_API_KEY') else 'NÃO'}", flush=True)
+print(f"MISTRAL_API_KEY   : {'Sim' if os.getenv('MISTRAL_API_KEY') else 'NÃO'}", flush=True)
+print(f"LOGFARE_API_KEY   : {'Sim' if os.getenv('LOGFARE_API_KEY') else 'NÃO'}", flush=True)
+print("=" * 60, flush=True)
 
+# ====================== CLIENTES ======================
 groq_client = OpenAI(
     api_key=os.getenv("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1",
-    timeout=30.0
-)
-
-logfare_client = OpenAI(
-    api_key=os.getenv("LOGFARE_API_KEY"),
-    base_url="https://logfare.ai/v1",
     timeout=30.0
 )
 
@@ -39,10 +37,32 @@ gemini_client = OpenAI(
     timeout=30.0
 )
 
+openrouter_client = OpenAI(
+    api_key=os.getenv("OPENROUTER_API_KEY"),
+    base_url="https://openrouter.ai/api/v1",
+    timeout=30.0
+)
+
+cerebras_client = OpenAI(
+    api_key=os.getenv("CEREBRAS_API_KEY"),
+    base_url="https://api.cerebras.ai/v1",
+    timeout=30.0
+)
+
+mistral_client = OpenAI(
+    api_key=os.getenv("MISTRAL_API_KEY"),
+    base_url="https://api.mistral.ai/v1",
+    timeout=30.0
+)
+
+logfare_client = OpenAI(
+    api_key=os.getenv("LOGFARE_API_KEY"),
+    base_url="https://logfare.ai/v1",
+    timeout=30.0
+)
+
+# ====================== FALLBACK ======================
 async def get_ai_response(messages: list, max_tokens: int = 550):
-    """
-    Tenta as 3 APIs em ordem. Se uma falhar, tenta a próxima.
-    """
     providers = [
         {
             "name": "Groq",
@@ -50,20 +70,40 @@ async def get_ai_response(messages: list, max_tokens: int = 550):
             "model": "llama-3.3-70b-versatile"
         },
         {
-            "name": "Logfare",
-            "client": logfare_client,
-            "model": "deepseek-v4-flash"
-        },
-        {
             "name": "Gemini",
             "client": gemini_client,
             "model": "gemini-2.0-flash"
+        },
+        {
+            "name": "OpenRouter",
+            "client": openrouter_client,
+            "model": "meta-llama/llama-3.3-70b-instruct:free"   # modelo free
+        },
+        {
+            "name": "Cerebras",
+            "client": cerebras_client,
+            "model": "llama-3.3-70b"
+        },
+        {
+            "name": "Mistral",
+            "client": mistral_client,
+            "model": "mistral-small-latest"
+        },
+        {
+            "name": "Logfare",
+            "client": logfare_client,
+            "model": "deepseek-v4-flash"
         },
     ]
 
     last_error = None
 
     for provider in providers:
+        # Pula se a chave não existir
+        if not provider["client"].api_key:
+            print(f"Pulando {provider['name']} (sem chave)", flush=True)
+            continue
+
         try:
             print(f"Tentando {provider['name']}...", flush=True)
             response = provider["client"].chat.completions.create(
@@ -72,11 +112,11 @@ async def get_ai_response(messages: list, max_tokens: int = 550):
                 temperature=0.75,
                 max_tokens=max_tokens
             )
-            print(f"{provider['name']} respondeu com sucesso!", flush=True)
+            print(f"✅ {provider['name']} respondeu com sucesso!", flush=True)
             return response.choices[0].message.content
         except Exception as e:
             last_error = e
-            print(f"{provider['name']} falhou: {type(e).__name__}: {e}", flush=True)
+            print(f"❌ {provider['name']} falhou: {type(e).__name__}", flush=True)
             continue
 
     raise last_error
@@ -469,14 +509,14 @@ async def on_message(message: discord.Message):
         except Exception as e:
             import traceback
             error_text = f"{type(e).__name__}: {str(e)}"
-            print("\n========== ERRO NA API ==========", flush=True)
+            print("\n========== TODAS AS APIs FALHARAM ==========", flush=True)
             print(error_text, flush=True)
             traceback.print_exc()
-            print("=================================\n", flush=True)
+            print("============================================\n", flush=True)
 
             await message.reply(
                 f"I beg your pardon, sir. All my AI services are currently unavailable.\n\n"
-                f"**Erro técnico:** `{error_text[:350]}`"
+                f"**Erro técnico:** `{error_text[:300]}`"
             )
 
     await bot.process_commands(message)
