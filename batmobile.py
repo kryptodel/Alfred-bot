@@ -10,7 +10,7 @@ async def prepare_batmobile(channel_or_interaction, name: str, is_slash=False):
     embed.set_footer(text="Alfred Pennyworth • Always at your service")
 
     file = discord.File("batman-batmóvel.gif", filename="batman-batmóvel.gif)
-    embed.set_image(url="attachment://batmobile.gif")
+    embed.set_image(url="attachment://batman-batmóvel.gif")
 
     if is_slash:
         await channel_or_interaction.response.send_message(embed=embed, file=file)
