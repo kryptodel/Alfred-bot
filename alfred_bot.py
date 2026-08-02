@@ -16,15 +16,15 @@ load_dotenv()
 
 print("=" * 50, flush=True)
 print(f"DISCORD_TOKEN carregado: {'Sim' if os.getenv('DISCORD_TOKEN') else 'NÃO'}", flush=True)
-print(f"GROQ_API_KEY carregado: {'Sim' if os.getenv('GROQ_API_KEY') else 'NÃO'}", flush=True)
-if os.getenv("GROQ_API_KEY"):
-    key = os.getenv("GROQ_API_KEY")
-    print(f"GROQ_API_KEY começa com: {key[:8]}... e tem {len(key)} caracteres", flush=True)
+print(f"LOGFARE_API_KEY carregado: {'Sim' if os.getenv('LOGFARE_API_KEY') else 'NÃO'}", flush=True)
+if os.getenv("LOGFARE_API_KEY"):
+    key = os.getenv("LOGFARE_API_KEY")
+    print(f"LOGFARE_API_KEY começa com: {key[:8]}... e tem {len(key)} caracteres", flush=True)
 print("=" * 50, flush=True)
 
 client = OpenAI(
-    api_key=os.getenv("GROQ_API_KEY"),
-    base_url="https://api.groq.com/openai/v1"
+    api_key=os.getenv("LOGFARE_API_KEY"),
+    base_url="https://logfare.ai/v1"
 )
 
 intents = discord.Intents.default()
@@ -409,7 +409,7 @@ async def on_message(message: discord.Message):
             max_tokens = 200 if swear_level >= 10 else 550
 
             response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="deepseek-v4-flash",          
                 messages=full_messages,
                 temperature=0.75,
                 max_tokens=max_tokens
@@ -475,8 +475,6 @@ async def coffee_command(interaction: discord.Interaction):
     if user_data.get("is_krypto"):
         name = "Master Krypto"
     await serve_coffee(interaction, name, is_slash=True)
-
-
 
 
 if __name__ == "__main__":
