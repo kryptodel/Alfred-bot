@@ -24,8 +24,9 @@ print("=" * 50, flush=True)
 
 client = OpenAI(
     api_key=os.getenv("LOGFARE_API_KEY"),
-    base_url="https://logfare.ai/v1"
-)
+    base_url="https://logfare.ai/v1",
+    timeout=30.0          
+    )
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -409,7 +410,7 @@ async def on_message(message: discord.Message):
             max_tokens = 200 if swear_level >= 10 else 550
 
             response = client.chat.completions.create(
-                model="deepseek-v4-flash",          
+                model="qwen-3.6-35b-a3b",          
                 messages=full_messages,
                 temperature=0.75,
                 max_tokens=max_tokens
