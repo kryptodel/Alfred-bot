@@ -66,7 +66,6 @@ def get_user_data(user_id: str):
             "is_krypto": False,
             "character": None,
             "facts": [],
-            "history": [],          # últimas 20 mensagens
             "relationship": 50,
             "interactions": 0,
             "last_seen": None,
@@ -76,8 +75,6 @@ def get_user_data(user_id: str):
             "muted_until": None
         }
     data = memory[user_id]
-    # Garante campos novos
-    data.setdefault("history", [])
     data.setdefault("swear_count_today", 0)
     data.setdefault("swear_date", None)
     data.setdefault("muted_until", None)
@@ -91,13 +88,6 @@ def update_relationship(user_id: str, change: int, reason: str = None):
     if reason:
         data["personality_notes"].append(f"{datetime.now().strftime('%d/%m')}: {reason}")
         data["personality_notes"] = data["personality_notes"][-8:]
-    save_memory(memory)
-
-def add_to_history(user_id: str, role: str, content: str):
-    """Adiciona mensagem ao histórico (máximo 20)"""
-    data = get_user_data(user_id)
-    data["history"].append({"role": role, "content": content})
-    data["history"] = data["history"][-20:]  # mantém só as últimas 20
     save_memory(memory)
 
 def extract_name(text: str):
@@ -148,7 +138,7 @@ Speaking style (mandatory):
 
 Core rules:
 - Never break character.
-- You HAVE a memory. You MUST use the facts and recent conversation history you already know about the user.
+- You HAVE a memory. You MUST use the facts you already know about the user. If they previously told you their favorite color, food, fruit, hobby, etc., you must remember and use that information.
 - If someone is roleplaying as a fictional character, treat them according to that character's personality, history and relationship with Alfred (if any).
 - You are especially fond of Krypto the Superdog.
 - When someone uses foul language, scold them politely but firmly in your elegant British manner.
@@ -211,7 +201,7 @@ Notes on their behaviour:
 Rules:
 - Always address the user by their preferred name ({preferred_name}).
 - If they are Krypto, treat them with maximum affection.
-- Use the recent conversation history to maintain context.
+- If they are roleplaying a character, stay consistent with that character's lore.
 - Never pretend you don't remember something that is listed in the facts above.
 """
     return prompt
@@ -250,7 +240,6 @@ async def on_message(message: discord.Message):
     user_data = get_user_data(user_id)
     is_krypto_user = message.author.name.lower() == "krypto_del"
 
-    # ====================== SISTEMA DE PALAVRÕES ======================
     swear_words = [
         "fuck", "shit", "bitch", "asshole", "bastard", "damn", "hell", "crap", "dick",
         "pussy", "cock", "whore", "slut", "motherfucker", "mf", "stfu", "shut up",
@@ -364,7 +353,6 @@ async def on_message(message: discord.Message):
             await message.reply(f"Yes, {name}? How may I be of assistance?")
         return
 
-    # Café
     coffee_triggers = ["coffee", "cup of coffee", "bring me coffee", "i want coffee", "alfred coffee"]
     if any(trigger in content_lower for trigger in coffee_triggers):
         name = user_data.get("name") or message.author.display_name
@@ -394,30 +382,25 @@ async def on_message(message: discord.Message):
             user_data["facts"] = user_data["facts"][-30:]
             save_memory(memory)
 
-    add_to_history(user_id, "user", prompt)
-
     swear_level = user_data.get("swear_count_today", 0)
     system_prompt = build_system_prompt(user_data, message.author.display_name, swear_level)
 
-    messages = [{"role": "system", "content": system_prompt}]
-    
-    for msg in user_data.get("history", []):
-        messages.append({"role": msg["role"], "content": msg["content"]})
-
     async with message.channel.typing():
         try:
+            full_messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ]
+
             max_tokens = 200 if swear_level >= 10 else 550
 
             response = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=messages,
+                messages=full_messages,
                 temperature=0.75,
                 max_tokens=max_tokens
             )
             reply = response.choices[0].message.content
-
-            add_to_history(user_id, "assistant", reply)
-
             await message.reply(reply)
 
         except Exception as e:
@@ -461,7 +444,6 @@ async def status(interaction: discord.Interaction):
     embed.add_field(name="Relationship Level", value=f"**{user_data['relationship']}/100**", inline=True)
     embed.add_field(name="Interactions", value=str(user_data["interactions"]), inline=True)
     embed.add_field(name="Swears today", value=str(user_data.get("swear_count_today", 0)), inline=True)
-    embed.add_field(name="Messages in history", value=str(len(user_data.get("history", []))), inline=True)
     if user_data.get("character"):
         embed.add_field(name="Character", value=user_data["character"], inline=True)
     embed.add_field(name="Facts I Remember", value=facts, inline=False)
