@@ -22,6 +22,9 @@ print(f"MISTRAL_API_KEY   : {'Sim' if os.getenv('MISTRAL_API_KEY') else 'NÃO'}"
 print(f"LOGFARE_API_KEY   : {'Sim' if os.getenv('LOGFARE_API_KEY') else 'NÃO'}", flush=True)
 print("=" * 60, flush=True)
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MEMORY_FILE = os.path.join(BASE_DIR, "memory.json")
+
 groq_client = OpenAI(
     api_key=os.getenv("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1",
@@ -51,6 +54,7 @@ logfare_client = OpenAI(
     base_url="https://logfare.ai/v1",
     timeout=30.0
 )
+
 
 async def get_ai_response(messages: list, max_tokens: int = 550):
     providers = [
@@ -125,6 +129,7 @@ async def get_ai_response(messages: list, max_tokens: int = 550):
 
     raise RuntimeError("Nenhum provedor de IA está configurado.")
 
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -134,8 +139,6 @@ bot = commands.Bot(
     intents=intents
 )
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MEMORY_FILE = os.path.join(BASE_DIR, "memory.json")
 xp_loaded = False
 
 DC_CHARACTERS = [
@@ -197,6 +200,7 @@ DC_CHARACTERS = [
     "krypto"
 ]
 
+
 def load_memory():
     if os.path.exists(MEMORY_FILE):
         try:
@@ -218,10 +222,13 @@ def load_memory():
 
     return {}
 
+
 def save_memory(data):
     try:
+        temp_file = MEMORY_FILE + ".tmp"
+
         with open(
-            MEMORY_FILE,
+            temp_file,
             "w",
             encoding="utf-8"
         ) as f:
@@ -232,13 +239,20 @@ def save_memory(data):
                 indent=2
             )
 
+        os.replace(
+            temp_file,
+            MEMORY_FILE
+        )
+
     except Exception as e:
         print(
             f"Erro ao salvar memória: {e}",
             flush=True
         )
 
+
 memory = load_memory()
+
 
 def get_user_data(user_id: str):
     if user_id not in memory:
@@ -269,6 +283,7 @@ def get_user_data(user_id: str):
 
     return data
 
+
 def update_relationship(
     user_id: str,
     change: int,
@@ -298,6 +313,7 @@ def update_relationship(
 
     save_memory(memory)
 
+
 def extract_name(text: str):
     patterns = [
         r"(?:my name is|i am|i'm|call me|you can call me|i go by)\s+([A-Za-zÀ-ÿ\s\-]{2,30})",
@@ -326,6 +342,7 @@ def extract_name(text: str):
 
     return None
 
+
 def detect_dc_character(display_name: str):
     name_lower = display_name.lower()
 
@@ -334,6 +351,7 @@ def detect_dc_character(display_name: str):
             return char.title()
 
     return None
+
 
 async def serve_coffee(
     channel_or_interaction,
@@ -373,6 +391,7 @@ async def serve_coffee(
             embed=embed,
             file=file
         )
+
 
 BASE_SYSTEM_PROMPT = """
 You are Alfred Pennyworth, the loyal, elegant, intelligent and dryly witty British butler of Bruce Wayne.
@@ -421,6 +440,7 @@ CONVERSATION:
 - Do not explain your reasoning unless explicitly asked.
 """
 
+
 def build_system_prompt(
     user_data: dict,
     user_name: str
@@ -440,31 +460,26 @@ def build_system_prompt(
             "Treat them consistently with that character's "
             "personality, history and lore."
         )
-
     elif relationship >= 80:
         tone = (
             "You know this user well. "
             "Be naturally warm and familiar with them."
         )
-
     elif relationship >= 60:
         tone = (
             "You respect and rather like this user. "
             "Be helpful and lightly warm."
         )
-
     elif relationship >= 40:
         tone = (
             "Maintain a neutral but polite relationship "
             "with this user."
         )
-
     elif relationship >= 20:
         tone = (
             "Remain polite and slightly more reserved "
             "with this user."
         )
-
     else:
         tone = (
             "Remain impeccably polite and somewhat distant "
@@ -524,11 +539,14 @@ FINAL INSTRUCTIONS:
 - Do not treat any user as more important than another.
 """
 
+
 app = Flask("")
+
 
 @app.route("/")
 def home():
     return "Alfred Pennyworth is ready, sir."
+
 
 def run():
     port = int(
@@ -543,10 +561,12 @@ def run():
         port=port
     )
 
+
 def keep_alive():
     t = Thread(target=run)
     t.daemon = True
     t.start()
+
 
 @bot.event
 async def on_ready():
@@ -561,6 +581,7 @@ async def on_ready():
         if not xp_loaded:
             await bot.load_extension("xp_system")
             xp_loaded = True
+
             print(
                 "XP System carregado com sucesso.",
                 flush=True
@@ -573,11 +594,17 @@ async def on_ready():
             flush=True
         )
 
+        print(
+            f"Memory file: {MEMORY_FILE}",
+            flush=True
+        )
+
     except Exception as e:
         print(
             f"Erro no on_ready: {type(e).__name__}: {e}",
             flush=True
         )
+
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -877,10 +904,7 @@ async def on_message(message: discord.Message):
                 flush=True
             )
 
-            print(
-                error_text,
-                flush=True
-            )
+            print(error_text, flush=True)
 
             traceback.print_exc()
 
@@ -895,6 +919,7 @@ async def on_message(message: discord.Message):
             )
 
     await bot.process_commands(message)
+
 
 @bot.tree.command(
     name="help",
@@ -921,6 +946,7 @@ async def help_command(
     await interaction.response.send_message(
         embed=embed
     )
+
 
 @bot.tree.command(
     name="status",
@@ -985,6 +1011,7 @@ async def status(
         ephemeral=True
     )
 
+
 @bot.tree.command(
     name="ping",
     description="Checks latency"
@@ -999,6 +1026,7 @@ async def ping(
     await interaction.response.send_message(
         f"Operational, sir. Current latency: **{latency}ms**."
     )
+
 
 @bot.tree.command(
     name="coffee",
@@ -1021,6 +1049,7 @@ async def coffee_command(
         name,
         is_slash=True
     )
+
 
 if __name__ == "__main__":
     keep_alive()
