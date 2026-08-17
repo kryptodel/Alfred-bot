@@ -58,17 +58,17 @@ async def get_ai_response(messages: list, max_tokens: int = 550):
         {
             "name": "Groq",
             "client": groq_client,
-            "model": "llama-3.3-70b-versatile"
+            "model": "openai/gpt-oss-120b"
         },
         {
             "name": "Gemini",
             "client": gemini_client,
-            "model": "gemini-2.0-flash"
+            "model": "gemini-3.6-flash"
         },
         {
             "name": "OpenRouter",
             "client": openrouter_client,
-            "model": "meta-llama/llama-3.3-70b-instruct:free"
+            "model": "google/gemini-3.7-flash"
         },
         {
             "name": "Mistral",
