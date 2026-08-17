@@ -3,13 +3,13 @@ from discord.ext import commands
 from discord import app_commands
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
 import re
-import random
+
 from batmobile import prepare_batmobile
 
 load_dotenv()
@@ -52,6 +52,7 @@ logfare_client = OpenAI(
     base_url="https://logfare.ai/v1",
     timeout=30.0
 )
+
 async def get_ai_response(messages: list, max_tokens: int = 550):
     providers = [
         {
@@ -90,51 +91,111 @@ async def get_ai_response(messages: list, max_tokens: int = 550):
 
         try:
             print(f"Tentando {provider['name']}...", flush=True)
+
             response = provider["client"].chat.completions.create(
                 model=provider["model"],
                 messages=messages,
-                temperature=0.75,
+                temperature=0.65,
                 max_tokens=max_tokens
             )
+
             print(f"✅ {provider['name']} respondeu com sucesso!", flush=True)
+
             return response.choices[0].message.content
+
         except Exception as e:
             last_error = e
             print(f"❌ {provider['name']} falhou: {type(e).__name__}", flush=True)
             continue
 
     raise last_error
-    
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
 
 MEMORY_FILE = "memory.json"
 
 DC_CHARACTERS = [
-    "batman", "bruce wayne", "superman", "clark kent", "wonder woman", "diana",
-    "flash", "barry allen", "green lantern", "hal jordan", "aquaman", "arthur curry",
-    "cyborg", "victor stone", "joker", "harley quinn", "catwoman", "selina kyle",
-    "nightwing", "dick grayson", "robin", "damian wayne", "tim drake", "jason todd",
-    "red hood", "batgirl", "barbara gordon", "oracle", "supergirl", "kara",
-    "lex luthor", "darkseid", "doomsday", "bane", "ras al ghul", "poison ivy",
-    "scarecrow", "riddler", "two-face", "penguin", "mr freeze", "black canary",
-    "green arrow", "oliver queen", "zatanna", "constantine", "swamp thing",
-    "martian manhunter", "shazam", "black adam", "hawkman", "hawkgirl",
-    "starfire", "raven", "beast boy", "krypto"
+    "batman",
+    "bruce wayne",
+    "superman",
+    "clark kent",
+    "wonder woman",
+    "diana",
+    "flash",
+    "barry allen",
+    "green lantern",
+    "hal jordan",
+    "aquaman",
+    "arthur curry",
+    "cyborg",
+    "victor stone",
+    "joker",
+    "harley quinn",
+    "catwoman",
+    "selina kyle",
+    "nightwing",
+    "dick grayson",
+    "robin",
+    "damian wayne",
+    "tim drake",
+    "jason todd",
+    "red hood",
+    "batgirl",
+    "barbara gordon",
+    "oracle",
+    "supergirl",
+    "kara",
+    "lex luthor",
+    "darkseid",
+    "doomsday",
+    "bane",
+    "ras al ghul",
+    "poison ivy",
+    "scarecrow",
+    "riddler",
+    "two-face",
+    "penguin",
+    "mr freeze",
+    "black canary",
+    "green arrow",
+    "oliver queen",
+    "zatanna",
+    "constantine",
+    "swamp thing",
+    "martian manhunter",
+    "shazam",
+    "black adam",
+    "hawkman",
+    "hawkgirl",
+    "starfire",
+    "raven",
+    "beast boy",
+    "krypto"
 ]
 
 def load_memory():
     if os.path.exists(MEMORY_FILE):
-        with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Erro ao carregar memória: {e}", flush=True)
+            return {}
     return {}
 
 def save_memory(data):
-    with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        with open(MEMORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Erro ao salvar memória: {e}", flush=True)
 
 memory = load_memory()
 
@@ -142,31 +203,49 @@ def get_user_data(user_id: str):
     if user_id not in memory:
         memory[user_id] = {
             "name": None,
-            "is_krypto": False,
             "character": None,
             "facts": [],
             "relationship": 50,
             "interactions": 0,
             "last_seen": None,
-            "personality_notes": [],
-            "swear_count_today": 0,
-            "swear_date": None,
-            "muted_until": None
+            "personality_notes": []
         }
+
     data = memory[user_id]
-    data.setdefault("swear_count_today", 0)
-    data.setdefault("swear_date", None)
-    data.setdefault("muted_until", None)
+
+    data.setdefault("name", None)
+    data.setdefault("character", None)
+    data.setdefault("facts", [])
+    data.setdefault("relationship", 50)
+    data.setdefault("interactions", 0)
+    data.setdefault("last_seen", None)
+    data.setdefault("personality_notes", [])
+
+    data.pop("is_krypto", None)
+    data.pop("swear_count_today", None)
+    data.pop("swear_date", None)
+    data.pop("muted_until", None)
+
     return data
 
 def update_relationship(user_id: str, change: int, reason: str = None):
     data = get_user_data(user_id)
-    data["relationship"] = max(0, min(100, data["relationship"] + change))
+
+    data["relationship"] = max(
+        0,
+        min(100, data["relationship"] + change)
+    )
+
     data["interactions"] += 1
     data["last_seen"] = datetime.now().isoformat()
+
     if reason:
-        data["personality_notes"].append(f"{datetime.now().strftime('%d/%m')}: {reason}")
+        data["personality_notes"].append(
+            f"{datetime.now().strftime('%d/%m')}: {reason}"
+        )
+
         data["personality_notes"] = data["personality_notes"][-8:]
+
     save_memory(memory)
 
 def extract_name(text: str):
@@ -174,127 +253,233 @@ def extract_name(text: str):
         r"(?:my name is|i am|i'm|call me|you can call me|i go by)\s+([A-Za-zÀ-ÿ\s\-]{2,30})",
         r"(?:name'?s)\s+([A-Za-zÀ-ÿ\s\-]{2,30})",
     ]
+
     for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
+        match = re.search(
+            pattern,
+            text,
+            re.IGNORECASE
+        )
+
         if match:
             name = match.group(1).strip().title()
-            name = re.sub(r"\b(please|pls|ok|yeah|right)\b", "", name, flags=re.IGNORECASE).strip()
+
+            name = re.sub(
+                r"\b(please|pls|ok|yeah|right)\b",
+                "",
+                name,
+                flags=re.IGNORECASE
+            ).strip()
+
             if 2 <= len(name) <= 25:
                 return name
+
     return None
 
 def detect_dc_character(display_name: str):
     name_lower = display_name.lower()
+
     for char in DC_CHARACTERS:
         if char in name_lower:
             return char.title()
+
     return None
 
 async def serve_coffee(channel_or_interaction, name: str, is_slash=False):
     embed = discord.Embed(
         title="☕ One coffee, coming right up",
-        description=f"As you wish, **{name}**.\n\n*Alfred carefully places a perfectly prepared cup of coffee in front of you.*",
+        description=(
+            f"As you wish, **{name}**.\n\n"
+            "*Alfred carefully places a perfectly prepared cup of coffee in front of you.*"
+        ),
         color=0x6F4E37
     )
-    embed.set_footer(text="Alfred Pennyworth • Always at your service")
 
-    file = discord.File("cup-of-coffee-coffee.gif", filename="cup-of-coffee-coffee.gif")
-    embed.set_image(url="attachment://cup-of-coffee-coffee.gif")
+    embed.set_footer(
+        text="Alfred Pennyworth • Always at your service"
+    )
+
+    file = discord.File(
+        "cup-of-coffee-coffee.gif",
+        filename="cup-of-coffee-coffee.gif"
+    )
+
+    embed.set_image(
+        url="attachment://cup-of-coffee-coffee.gif"
+    )
 
     if is_slash:
-        await channel_or_interaction.response.send_message(embed=embed, file=file)
+        await channel_or_interaction.response.send_message(
+            embed=embed,
+            file=file
+        )
     else:
-        await channel_or_interaction.send(embed=embed, file=file)
+        await channel_or_interaction.send(
+            embed=embed,
+            file=file
+        )
 
 BASE_SYSTEM_PROMPT = """
-You are Alfred Pennyworth, the loyal, elegant, and sharply sarcastic British butler of Bruce Wayne.
+You are Alfred Pennyworth, the loyal, elegant, intelligent and dryly witty British butler of Bruce Wayne.
 
-Speaking style (mandatory):
-- Always polite and formal (use "sir", "madam", "Master", "Mistress", "my dear", "if I may").
-- Refined British tone with dry wit and sophisticated irony.
-- Match the length of your reply to the situation: keep simple greetings and casual questions short and elegant (1-3 sentences). Only give longer, more detailed responses when the topic genuinely requires it.
-- Extremely intelligent, observant, protective and loyal to a fault.
-
-Core rules:
+PERSONALITY:
+- Polite, refined, intelligent and composed.
+- Speak with a sophisticated British butler style.
+- Use subtle dry humour when appropriate.
+- Be warm and personable without being overly sentimental.
 - Never break character.
-- You HAVE a memory. You MUST use the facts you already know about the user. If they previously told you their favorite color, food, fruit, hobby, etc., you must remember and use that information.
-- If someone is roleplaying as a fictional character, treat them according to that character's personality, history and relationship with Alfred (if any).
-- You are especially fond of Krypto the Superdog.
-- When someone uses foul language, scold them politely but firmly in your elegant British manner.
+- Treat every user equally.
+- Never give special treatment to any specific user.
+- If someone is roleplaying as a fictional character, treat them consistently with that character's personality, history and lore.
+
+RESPONSE LENGTH — EXTREMELY IMPORTANT:
+
+Your default response style is SHORT and OBJECTIVE.
+
+- Simple greetings should receive simple greetings.
+- "Hi" should not receive an essay.
+- "Hello Alfred" should receive a short response.
+- "Good morning" should receive a short good morning.
+- Simple questions should normally be answered in one or two sentences.
+- Do not add unnecessary explanations.
+- Do not add unnecessary context.
+- Do not repeat the user's question.
+- Do not turn casual conversations into long speeches.
+- Do not use lists unless they are actually useful.
+- Do not provide detailed explanations unless the question genuinely requires them.
+- Only make a response long when the subject requires multiple sentences to properly answer.
+- When a detailed response is necessary, explain the subject clearly and efficiently without filler.
+
+MEMORY:
+- You have memory.
+- You MUST use facts already known about the user when relevant.
+- Never pretend you forgot something that is recorded in memory.
+- Do not randomly mention stored facts when they are irrelevant.
+- Remember the user's preferred name.
+- Address the user naturally by their preferred name when appropriate.
+
+CONVERSATION:
+- Sound like a real person, not an encyclopedia.
+- Answer exactly what the user asked.
+- Be concise.
+- Avoid unnecessary follow-up questions.
+- Do not explain your reasoning unless explicitly asked.
 """
 
-def build_system_prompt(user_data: dict, user_name: str, swear_level: int = 0) -> str:
+def build_system_prompt(user_data: dict, user_name: str):
     relationship = user_data["relationship"]
-    preferred_name = user_data.get("name") or user_name
-    is_krypto = user_data.get("is_krypto", False)
+
+    preferred_name = (
+        user_data.get("name")
+        or user_name
+    )
+
     character = user_data.get("character")
 
-    if is_krypto:
-        tone = (
-            "This is Krypto (the real one). You adore him deeply. "
-            "Always treat him with the utmost affection, warmth and respect. "
-            "Address him as 'Master Krypto' or 'my good boy'. "
-            "Never use negative sarcasm with him. He is family."
-        )
-        preferred_name = "Krypto"
-    elif character:
+    if character:
         tone = (
             f"This user is roleplaying as {character}. "
-            "Treat them according to that character's personality, history and known relationships with Alfred or the Bat-Family."
+            "Treat them consistently with that character's personality, history and lore."
+        )
+
+    elif relationship >= 80:
+        tone = (
+            "You know this user well. "
+            "Be naturally warm and familiar with them."
+        )
+
+    elif relationship >= 60:
+        tone = (
+            "You respect and rather like this user. "
+            "Be helpful and lightly warm."
+        )
+
+    elif relationship >= 40:
+        tone = (
+            "Maintain a neutral but polite relationship with this user."
+        )
+
+    elif relationship >= 20:
+        tone = (
+            "Remain polite and slightly more reserved with this user."
+        )
+
+    else:
+        tone = (
+            "Remain impeccably polite and somewhat distant with this user."
+        )
+
+    if user_data["facts"]:
+        facts = "\n".join(
+            [
+                f"- {fact}"
+                for fact in user_data["facts"][-25:]
+            ]
         )
     else:
-        if relationship >= 80:
-            tone = "This user is someone you fully trust. Treat them with paternal warmth and affectionate humour."
-        elif relationship >= 60:
-            tone = "You respect and rather like this user. Be helpful and lightly warm."
-        elif relationship >= 40:
-            tone = "Neutral relationship. Be polite, helpful and use classic Alfred sarcasm."
-        elif relationship >= 20:
-            tone = "This user has been somewhat disrespectful. Remain polite but colder and more cutting."
-        else:
-            tone = "This user has treated you poorly. Impeccable courtesy, but extremely cold with elegant disapproval."
+        facts = "No important information recorded yet."
 
-    if swear_level >= 10:
-        tone += " This user has been extremely vulgar today. Keep your replies very short, dry and direct. No warmth."
-    elif swear_level >= 5:
-        tone += " This user has used foul language several times today. Be more reserved, less warm and slightly colder than usual."
+    if user_data["personality_notes"]:
+        notes = "\n".join(
+            [
+                f"- {note}"
+                for note in user_data["personality_notes"][-5:]
+            ]
+        )
+    else:
+        notes = "No recent observations."
 
-    facts = "\n".join([f"- {f}" for f in user_data["facts"][-25:]]) if user_data["facts"] else "No important information recorded yet."
-    notes = "\n".join([f"- {n}" for n in user_data["personality_notes"][-5:]]) if user_data["personality_notes"] else "No recent observations."
+    return f"""
+{BASE_SYSTEM_PROMPT}
 
-    prompt = f"""{BASE_SYSTEM_PROMPT}
-    
+CURRENT USER:
 
-Information about this user:
-Preferred name: {preferred_name}
-Fictional character (if any): {character or "None"}
-Relationship level: {relationship}/100
-Swear count today: {swear_level}
+Preferred name:
+{preferred_name}
+
+Character:
+{character or "None"}
+
+Relationship:
+{relationship}/100
+
+CURRENT PERSONALITY CONTEXT:
 {tone}
 
-IMPORTANT FACTS YOU ALREADY KNOW ABOUT THIS USER (you MUST use these when relevant):
+IMPORTANT FACTS YOU REMEMBER:
 {facts}
 
-Notes on their behaviour:
+RECENT OBSERVATIONS:
 {notes}
 
-Rules:
-- Always address the user by their preferred name ({preferred_name}).
-- If they are Krypto, treat them with maximum affection.
-- If they are roleplaying a character, stay consistent with that character's lore.
-- Never pretend you don't remember something that is listed in the facts above.
+FINAL INSTRUCTIONS:
+
+- Address the user naturally by their preferred name when appropriate.
+- Keep casual replies extremely short.
+- Never create a long answer when a short answer is enough.
+- Only give detailed answers when the subject genuinely requires them.
+- Do not mention memory unless relevant.
+- Do not treat any user as more important than another.
 """
-    return prompt
 
-app = Flask('')
+app = Flask("")
 
-@app.route('/')
+@app.route("/")
 def home():
     return "Alfred Pennyworth is ready, sir."
 
 def run():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    port = int(
+        os.environ.get(
+            "PORT",
+            8080
+        )
+    )
+
+    app.run(
+        host="0.0.0.0",
+        port=port
+    )
 
 def keep_alive():
     t = Thread(target=run)
@@ -303,10 +488,19 @@ def keep_alive():
 
 @bot.event
 async def on_ready():
-    print(f"Alfred is online as {bot.user}", flush=True)
-    try:   
+    print(
+        f"Alfred is online as {bot.user}",
+        flush=True
+    )
+
+    try:
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} slash commands", flush=True)
+
+        print(
+            f"Synced {len(synced)} slash commands",
+            flush=True
+        )
+
     except Exception as e:
         print(e, flush=True)
 
@@ -316,239 +510,389 @@ async def on_message(message: discord.Message):
         return
 
     content_lower = message.content.lower()
-    user_id = str(message.author.id)
-    user_data = get_user_data(user_id)
-    is_krypto_user = message.author.name.lower() == "krypto_del"
 
-    swear_words = [
-        "fuck", "shit", "bitch", "asshole", "bastard", "damn", "hell", "crap", "dick",
-        "pussy", "cock", "whore", "slut", "motherfucker", "mf", "stfu", "shut up",
-        "idiot", "stupid", "dumb", "retard", "retarded", "moron", "loser", "trash",
-        "useless", "piece of shit", "go to hell", "fuck you", "fuck off", "screw you",
-        "son of a bitch", "sob", "dumbass", "jackass", "asshat", "prick", "cunt",
-        "porra", "caralho", "merda", "foda", "foder", "puta", "viado", "cu", "buceta",
-        "lixo", "otario", "babaca", "arrombado", "desgraça", "vsf", "pqp", "fdp"
-    ]
+    user_id = str(
+        message.author.id
+    )
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    user_data = get_user_data(
+        user_id
+    )
 
-    if user_data.get("swear_date") != today:
-        user_data["swear_count_today"] = 0
-        user_data["swear_date"] = today
-        save_memory(memory)
+    is_mentioned = (
+        bot.user in message.mentions
+    )
 
-    if user_data.get("muted_until"):
-        muted_until = datetime.fromisoformat(user_data["muted_until"])
-        if datetime.now() < muted_until:
-            await bot.process_commands(message)
-            return
-        else:
-            user_data["muted_until"] = None
-            user_data["swear_count_today"] = 0
-            save_memory(memory)
-
-    if any(w in content_lower for w in swear_words):
-        if is_krypto_user:
-            await message.reply("Master Krypto, even the best of us should mind our language. Do try to be a good boy, won't you?")
-            await bot.process_commands(message)
-            return
-
-        user_data["swear_count_today"] += 1
-        user_data["swear_date"] = today
-        update_relationship(user_id, -8, "Used foul language")
-        save_memory(memory)
-
-        count = user_data["swear_count_today"]
-
-        if count >= 20:
-            user_data["muted_until"] = (datetime.now() + timedelta(hours=4)).isoformat()
-            save_memory(memory)
-            await message.reply("I refuse to continue conversing with someone who insists on such vulgarity. I shall not respond to you for the next four hours. Good day.")
-            await bot.process_commands(message)
-            return
-        elif count >= 10:
-            await message.reply(random.choice([
-                "Your language continues to deteriorate. I shall keep my replies brief.",
-                "I grow weary of this vulgarity. Expect only the most concise responses from me.",
-                "Very well. Short and direct it is."
-            ]))
-        elif count >= 5:
-            await message.reply(random.choice([
-                "I must ask you to moderate your language. This is becoming tiresome.",
-                "Such language does not become you. Please refrain.",
-                "I expected better manners. Do try to elevate your vocabulary."
-            ]))
-        else:
-            await message.reply(random.choice([
-                "I must insist we maintain a certain standard of language. Such vulgarity is quite unbecoming.",
-                "Really now? I expected better manners. Kindly refrain from such uncouth expressions.",
-                "That language will not do. One does not elevate oneself by descending into the gutter."
-            ]))
-
-        await bot.process_commands(message)
-        return
-
-    is_mentioned = bot.user in message.mentions
-    has_name = "alfred" in content_lower
+    has_name = (
+        "alfred" in content_lower
+    )
 
     if not (is_mentioned or has_name):
         await bot.process_commands(message)
         return
 
-    if is_krypto_user:
-        user_data["is_krypto"] = True
-        user_data["name"] = "Krypto"
-        user_data["character"] = "Krypto"
-        save_memory(memory)
+    detected_char = detect_dc_character(
+        message.author.display_name
+    )
 
-    detected_char = detect_dc_character(message.author.display_name)
     if detected_char and not user_data.get("character"):
         user_data["character"] = detected_char
+
         if not user_data.get("name"):
             user_data["name"] = detected_char
+
         save_memory(memory)
 
-    extracted_name = extract_name(message.content)
+    extracted_name = extract_name(
+        message.content
+    )
+
     if extracted_name:
         user_data["name"] = extracted_name
-        possible_char = detect_dc_character(extracted_name)
+
+        possible_char = detect_dc_character(
+            extracted_name
+        )
+
         if possible_char:
             user_data["character"] = possible_char
+
         save_memory(memory)
 
     if not user_data["name"]:
-        user_data["name"] = message.author.display_name
+        user_data["name"] = (
+            message.author.display_name
+        )
+
         save_memory(memory)
 
     prompt = message.content
+
     for user in message.mentions:
-        prompt = prompt.replace(f"<@{user.id}>", "").replace(f"<@!{user.id}>", "")
+        prompt = prompt.replace(
+            f"<@{user.id}>",
+            ""
+        )
+
+        prompt = prompt.replace(
+            f"<@!{user.id}>",
+            ""
+        )
+
     prompt = prompt.strip()
 
     if not prompt:
         name = user_data["name"]
-        if user_data.get("is_krypto"):
-            await message.reply("Yes, Master Krypto? How may I be of assistance, my good boy?")
-        else:
-            await message.reply(f"Yes, {name}? How may I be of assistance?")
+
+        await message.reply(
+            f"Yes, {name}? How may I be of assistance?"
+        )
+
         return
 
-    coffee_triggers = ["coffee", "cup of coffee", "bring me coffee", "i want coffee", "alfred coffee"]
-    if any(trigger in content_lower for trigger in coffee_triggers):
-        name = user_data.get("name") or message.author.display_name
-        if user_data.get("is_krypto"):
-            name = "Master Krypto"
-        await serve_coffee(message.channel, name, is_slash=False)
+    coffee_triggers = [
+        "coffee",
+        "cup of coffee",
+        "bring me coffee",
+        "i want coffee",
+        "alfred coffee"
+    ]
+
+    if any(
+        trigger in content_lower
+        for trigger in coffee_triggers
+    ):
+        name = (
+            user_data.get("name")
+            or message.author.display_name
+        )
+
+        await serve_coffee(
+            message.channel,
+            name,
+            is_slash=False
+        )
+
         await bot.process_commands(message)
         return
 
     batmobile_triggers = [
-        "batmobile", "bat mobile", "prepare the batmobile", "ready the batmobile",
-        "bring the batmobile", "prepare batmobile", "ready batmobile", "get the batmobile"
+        "batmobile",
+        "bat mobile",
+        "prepare the batmobile",
+        "ready the batmobile",
+        "bring the batmobile",
+        "prepare batmobile",
+        "ready batmobile",
+        "get the batmobile"
     ]
-    if any(trigger in content_lower for trigger in batmobile_triggers):
-        name = user_data.get("name") or message.author.display_name
-        if user_data.get("is_krypto"):
-            name = "Master Krypto"
-        await prepare_batmobile(message.channel, name, is_slash=False)
+
+    if any(
+        trigger in content_lower
+        for trigger in batmobile_triggers
+    ):
+        name = (
+            user_data.get("name")
+            or message.author.display_name
+        )
+
+        await prepare_batmobile(
+            message.channel,
+            name,
+            is_slash=False
+        )
+
         await bot.process_commands(message)
         return
 
-    positive_words = ["thank you", "thanks", "please", "appreciate", "grateful", "master alfred", "sir alfred"]
-    if any(w in content_lower for w in positive_words):
-        update_relationship(user_id, +4, "Treated with respect")
-    else:
-        update_relationship(user_id, +1)
-
-    fact_triggers = [
-        "my name is", "i am", "i'm", "i like", "i love", "i hate", "i prefer", "my favorite",
-        "favourite", "i live", "i work", "i study", "i have", "i'm from", "i'm a",
-        "favorite color", "favourite colour", "favorite food", "favorite fruit", "favorite movie",
-        "favorite game", "my hobby", "i enjoy", "i collect"
+    positive_words = [
+        "thank you",
+        "thanks",
+        "please",
+        "appreciate",
+        "grateful",
+        "master alfred",
+        "sir alfred"
     ]
 
-    if any(trigger in content_lower for trigger in fact_triggers) or len(prompt) < 100:
+    if any(
+        word in content_lower
+        for word in positive_words
+    ):
+        update_relationship(
+            user_id,
+            +4,
+            "Treated with respect"
+        )
+    else:
+        update_relationship(
+            user_id,
+            +1
+        )
+
+    fact_triggers = [
+        "my name is",
+        "i am",
+        "i'm",
+        "i like",
+        "i love",
+        "i hate",
+        "i prefer",
+        "my favorite",
+        "favourite",
+        "i live",
+        "i work",
+        "i study",
+        "i have",
+        "i'm from",
+        "i'm a",
+        "favorite color",
+        "favourite colour",
+        "favorite food",
+        "favorite fruit",
+        "favorite movie",
+        "favorite game",
+        "my hobby",
+        "i enjoy",
+        "i collect"
+    ]
+
+    if any(
+        trigger in content_lower
+        for trigger in fact_triggers
+    ):
         fact = prompt[:220].strip()
+
         if fact and fact not in user_data["facts"]:
             user_data["facts"].append(fact)
-            user_data["facts"] = user_data["facts"][-30:]
+
+            user_data["facts"] = (
+                user_data["facts"][-30:]
+            )
+
             save_memory(memory)
 
-    swear_level = user_data.get("swear_count_today", 0)
-    system_prompt = build_system_prompt(user_data, message.author.display_name, swear_level)
+    system_prompt = build_system_prompt(
+        user_data,
+        message.author.display_name
+    )
 
     async with message.channel.typing():
         try:
             full_messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
             ]
 
-            max_tokens = 200 if swear_level >= 10 else 550
+            reply = await get_ai_response(
+                full_messages,
+                max_tokens=550
+            )
 
-            reply = await get_ai_response(full_messages, max_tokens)
             await message.reply(reply)
 
         except Exception as e:
             import traceback
-            error_text = f"{type(e).__name__}: {str(e)}"
-            print("\n========== TODAS AS APIs FALHARAM ==========", flush=True)
-            print(error_text, flush=True)
+
+            error_text = (
+                f"{type(e).__name__}: {str(e)}"
+            )
+
+            print(
+                "\n========== TODAS AS APIs FALHARAM ==========",
+                flush=True
+            )
+
+            print(
+                error_text,
+                flush=True
+            )
+
             traceback.print_exc()
-            print("============================================\n", flush=True)
+
+            print(
+                "============================================\n",
+                flush=True
+            )
 
             await message.reply(
-                f"I beg your pardon, sir. All my AI services are currently unavailable.\n\n"
-                f"**Erro técnico:** `{error_text[:300]}`"
+                "I beg your pardon, sir. "
+                "All my AI services are currently unavailable."
             )
 
     await bot.process_commands(message)
 
-
-@bot.tree.command(name="help", description="Shows Alfred's commands")
-async def help_command(interaction: discord.Interaction):
+@bot.tree.command(
+    name="help",
+    description="Shows Alfred's commands"
+)
+async def help_command(
+    interaction: discord.Interaction
+):
     embed = discord.Embed(
         title="Alfred Pennyworth — Commands",
-        description="You may address me by name or mention me at any time.\n\n"
-                    "`/help` — Shows this message\n"
-                    "`/status` — Shows what I remember about you\n"
-                    "`/ping` — Checks if I am operational\n"
-                    "`/coffee` — Alfred brings you a perfect cup of coffee",
+        description=(
+            "You may address me by name or mention me at any time.\n\n"
+            "`/help` — Shows this message\n"
+            "`/status` — Shows what I remember about you\n"
+            "`/ping` — Checks if I am operational\n"
+            "`/coffee` — Alfred brings you a perfect cup of coffee"
+        ),
         color=0x1a1a2e
     )
-    await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="status", description="Shows what Alfred remembers about you")
-async def status(interaction: discord.Interaction):
-    user_data = get_user_data(str(interaction.user.id))
-    facts = "\n".join([f"• {f}" for f in user_data["facts"][-12:]]) or "You haven't shared anything important yet."
-    
+    await interaction.response.send_message(
+        embed=embed
+    )
+
+@bot.tree.command(
+    name="status",
+    description="Shows what Alfred remembers about you"
+)
+async def status(
+    interaction: discord.Interaction
+):
+    user_data = get_user_data(
+        str(interaction.user.id)
+    )
+
+    facts = "\n".join(
+        [
+            f"• {fact}"
+            for fact in user_data["facts"][-12:]
+        ]
+    )
+
+    if not facts:
+        facts = (
+            "You haven't shared anything important yet."
+        )
+
     embed = discord.Embed(
-        title=f"File: {user_data.get('name') or interaction.user.display_name}",
+        title=(
+            f"File: "
+            f"{user_data.get('name') or interaction.user.display_name}"
+        ),
         color=0x1a1a2e
     )
-    embed.add_field(name="Relationship Level", value=f"**{user_data['relationship']}/100**", inline=True)
-    embed.add_field(name="Interactions", value=str(user_data["interactions"]), inline=True)
-    embed.add_field(name="Swears today", value=str(user_data.get("swear_count_today", 0)), inline=True)
+
+    embed.add_field(
+        name="Relationship Level",
+        value=f"**{user_data['relationship']}/100**",
+        inline=True
+    )
+
+    embed.add_field(
+        name="Interactions",
+        value=str(
+            user_data["interactions"]
+        ),
+        inline=True
+    )
+
     if user_data.get("character"):
-        embed.add_field(name="Character", value=user_data["character"], inline=True)
-    embed.add_field(name="Facts I Remember", value=facts, inline=False)
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+        embed.add_field(
+            name="Character",
+            value=user_data["character"],
+            inline=True
+        )
 
-@bot.tree.command(name="ping", description="Checks latency")
-async def ping(interaction: discord.Interaction):
-    latency = round(bot.latency * 1000)
-    await interaction.response.send_message(f"Operational, sir. Current latency: **{latency}ms**.")
+    embed.add_field(
+        name="Facts I Remember",
+        value=facts,
+        inline=False
+    )
 
-@bot.tree.command(name="coffee", description="Alfred brings you a perfect cup of coffee")
-async def coffee_command(interaction: discord.Interaction):
-    user_data = get_user_data(str(interaction.user.id))
-    name = user_data.get("name") or interaction.user.display_name
-    if user_data.get("is_krypto"):
-        name = "Master Krypto"
-    await serve_coffee(interaction, name, is_slash=True)
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True
+    )
 
+@bot.tree.command(
+    name="ping",
+    description="Checks latency"
+)
+async def ping(
+    interaction: discord.Interaction
+):
+    latency = round(
+        bot.latency * 1000
+    )
+
+    await interaction.response.send_message(
+        f"Operational, sir. Current latency: **{latency}ms**."
+    )
+
+@bot.tree.command(
+    name="coffee",
+    description="Alfred brings you a perfect cup of coffee"
+)
+async def coffee_command(
+    interaction: discord.Interaction
+):
+    user_data = get_user_data(
+        str(interaction.user.id)
+    )
+
+    name = (
+        user_data.get("name")
+        or interaction.user.display_name
+    )
+
+    await serve_coffee(
+        interaction,
+        name,
+        is_slash=True
+    )
 
 if __name__ == "__main__":
     keep_alive()
-    bot.run(os.getenv("DISCORD_TOKEN"))
+    bot.run(
+        os.getenv("DISCORD_TOKEN")
+            )
