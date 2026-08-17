@@ -948,10 +948,9 @@ class XPSystem(commands.Cog):
         await interaction.followup.send(
             file=file
         )
-
     @app_commands.command(
         name="ranking",
-        description="Server XP ranking"
+        description="Shows the server XP ranking"
     )
     async def leaderboard(
         self,
@@ -959,45 +958,38 @@ class XPSystem(commands.Cog):
     ):
         await interaction.response.defer()
 
+        if interaction.guild is None:
+            await interaction.followup.send(
+                "This command can only be used inside a server."
+            )
+            return
+
         memory = load_memory()
         ranking = []
 
-        for user_id, data in memory.items():
+        for member in interaction.guild.members:
+            if member.bot:
+                continue
+
+            user_id = str(member.id)
+
+            data = memory.get(user_id)
 
             if not isinstance(data, dict):
                 continue
 
-            xp = data.get(
-                "xp",
-                0
-            )
-
-            level = data.get(
-                "level",
-                1
-            )
+            xp = data.get("xp", 0)
+            level = data.get("level", 1)
 
             if xp <= 0:
                 continue
-
-            try:
-                user = await self.bot.fetch_user(
-                    int(user_id)
-                )
-
-                name = user.display_name
-
-            except Exception:
-                name = (
-                    f"User-{user_id[-4:]}"
-                )
 
             ranking.append(
                 (
                     user_id,
                     xp,
                     level,
-                    name
+                    member.display_name
                 )
             )
 
@@ -1013,7 +1005,7 @@ class XPSystem(commands.Cog):
 
         if not ranking:
             await interaction.followup.send(
-                "No one has earned XP yet, sir."
+                "No one in this server has earned XP yet, sir."
             )
             return
 
@@ -1030,7 +1022,7 @@ class XPSystem(commands.Cog):
         await interaction.followup.send(
             file=file
         )
-
+        
     @app_commands.command(
         name="daily",
         description="Claim your daily XP reward"
