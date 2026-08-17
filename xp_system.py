@@ -141,6 +141,20 @@ def update_streak(user_id: str):
     save_memory(memory)
     return data
 
+async def get_avatar(user: discord.User, size=140):
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(str(user.display_avatar.url)) as resp:
+                avatar_data = await resp.read()
+        avatar = Image.open(BytesIO(avatar_data)).convert("RGBA").resize((size, size))
+        mask = Image.new("L", (size, size), 0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.ellipse((0, 0, size, size), fill=255)
+        avatar.putalpha(mask)
+        return avatar
+    except:
+        return None
+
 async def create_profile_card(user: discord.User, data: dict) -> BytesIO:
     level = data["level"]
     xp = data["xp"]
@@ -160,19 +174,10 @@ async def create_profile_card(user: discord.User, data: dict) -> BytesIO:
 
     draw.rounded_rectangle([15, 15, width-15, height-15], radius=20, outline=(80, 80, 120, 180), width=2)
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(str(user.display_avatar.url)) as resp:
-                avatar_data = await resp.read()
-        avatar = Image.open(BytesIO(avatar_data)).convert("RGBA").resize((160, 160))
-        
-        mask = Image.new("L", (160, 160), 0)
-        mask_draw = ImageDraw.Draw(mask)
-        mask_draw.ellipse((0, 0, 160, 160), fill=255)
-        avatar.putalpha(mask)
-        
+    avatar = await get_avatar(user, 160)
+    if avatar:
         img.paste(avatar, (40, 70), avatar)
-    except:
+    else:
         draw.ellipse([40, 70, 200, 230], fill=(60, 60, 80))
 
     try:
@@ -204,8 +209,8 @@ async def create_profile_card(user: discord.User, data: dict) -> BytesIO:
     buffer.seek(0)
     return buffer
 
-async def create_simple_card(title: str, lines: list) -> BytesIO:
-    width, height = 700, 280
+async def create_simple_card(user: discord.User, title: str, lines: list) -> BytesIO:
+    width, height = 750, 280
     img = Image.new("RGBA", (width, height), (18, 18, 28, 255))
     draw = ImageDraw.Draw(img)
 
@@ -218,7 +223,7 @@ async def create_simple_card(title: str, lines: list) -> BytesIO:
     draw.rounded_rectangle([12, 12, width-12, height-12], radius=18, outline=(70, 70, 110, 180), width=2)
 
     try:
-        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
+        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 30)
         font_text = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 22)
     except:
         font_title = ImageFont.load_default()
@@ -230,6 +235,65 @@ async def create_simple_card(title: str, lines: list) -> BytesIO:
     for line in lines:
         draw.text((40, y), line, font=font_text, fill=(190, 190, 220))
         y += 38
+
+    avatar = await get_avatar(user, 130)
+    if avatar:
+        img.paste(avatar, (width - 170, 70), avatar)
+    else:
+        draw.ellipse([width - 170, 70, width - 40, 200], fill=(60, 60, 80))
+
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer
+
+async def create_leaderboard_card(bot, ranking: list) -> BytesIO:
+    row_height = 55
+    header_height = 70
+    height = header_height + (len(ranking) * row_height) + 30
+    width = 800
+
+    img = Image.new("RGBA", (width, height), (16, 16, 26, 255))
+    draw = ImageDraw.Draw(img)
+
+    for i in range(height):
+        r = int(16 + i * 0.02)
+        g = int(16 + i * 0.02)
+        b = int(26 + i * 0.04)
+        draw.line([(0, i), (width, i)], fill=(r, g, b, 255))
+
+    draw.rounded_rectangle([10, 10, width-10, height-10], radius=16, outline=(70, 70, 110, 160), width=2)
+
+    try:
+        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28)
+        font_row = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
+        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 17)
+    except:
+        font_title = ImageFont.load_default()
+        font_row = ImageFont.load_default()
+        font_small = ImageFont.load_default()
+
+    draw.text((30, 22), "Server Leaderboard", font=font_title, fill=(230, 230, 255))
+
+    medals = ["1.", "2.", "3."]
+
+    for i, (user_id, xp, level, name) in enumerate(ranking):
+        y = header_height + (i * row_height)
+
+        if i % 2 == 0:
+            draw.rectangle([20, y, width-20, y + row_height - 4], fill=(30, 30, 45, 180))
+
+        pos = medals[i] if i < 3 else f"{i+1}."
+        draw.text((35, y + 14), pos, font=font_row, fill=(200, 200, 230))
+
+        display_name = name[:22] + "..." if len(name) > 22 else name
+        draw.text((90, y + 14), display_name, font=font_row, fill=(230, 230, 255))
+
+        draw.text((420, y + 14), f"Lvl {level}", font=font_row, fill=(160, 180, 255))
+        draw.text((540, y + 14), f"{xp:,} XP", font=font_small, fill=(170, 170, 200))
+
+        title = get_rank_title(level)
+        draw.text((680, y + 16), title[:14], font=font_small, fill=(140, 140, 180))
 
     buffer = BytesIO()
     img.save(buffer, format="PNG")
@@ -275,40 +339,41 @@ class XPSystem(commands.Cog):
             f"{percent:.1f}% to next level"
         ]
 
-        card = await create_simple_card("XP Information", lines)
+        card = await create_simple_card(interaction.user, "XP Information", lines)
         file = discord.File(card, filename="level.png")
         await interaction.followup.send(file=file)
 
-    @app_commands.command(name="leaderboard", description="Server XP ranking")
+    @app_commands.command(name="ranking", description="Server XP ranking")
     async def leaderboard(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
         memory = load_memory()
         ranking = []
+
         for user_id, data in memory.items():
             xp = data.get("xp", 0)
-            if xp > 0:
-                ranking.append((user_id, xp, data.get("level", 1)))
-        ranking.sort(key=lambda x: x[1], reverse=True)
-        ranking = ranking[:10]
+            level = data.get("level", 1)
+            if xp <= 0:
+                continue
 
-        if not ranking:
-            await interaction.response.send_message("No one has earned XP yet, sir.")
-            return
-
-        description = ""
-        medals = ["🥇", "🥈", "🥉"]
-        for i, (user_id, xp, level) in enumerate(ranking):
             try:
                 user = await self.bot.fetch_user(int(user_id))
                 name = user.display_name
             except:
-                name = f"User {user_id}"
-            medal = medals[i] if i < 3 else f"`{i+1}.`"
-            title = get_rank_title(level)
-            description += f"{medal} **{name}** — Level {level} ({title})\n`{xp:,} XP`\n\n"
+                name = f"User-{user_id[-4:]}"
 
-        embed = discord.Embed(title="🏆 Server Leaderboard", description=description, color=0x1a1a2e)
-        embed.set_footer(text="Alfred Pennyworth • Excellence is noted")
-        await interaction.response.send_message(embed=embed)
+            ranking.append((user_id, xp, level, name))
+
+        ranking.sort(key=lambda x: (-x[2], -x[1], x[3].lower()))
+        ranking = ranking[:15]
+
+        if not ranking:
+            await interaction.followup.send("No one has earned XP yet, sir.")
+            return
+
+        card = await create_leaderboard_card(self.bot, ranking)
+        file = discord.File(card, filename="leaderboard.png")
+        await interaction.followup.send(file=file)
 
     @app_commands.command(name="daily", description="Claim your daily XP reward")
     async def daily(self, interaction: discord.Interaction):
@@ -349,7 +414,7 @@ class XPSystem(commands.Cog):
         if leveled_up:
             lines.append(f"Level up! You are now Level {new_level}")
 
-        card = await create_simple_card("Daily Reward", lines)
+        card = await create_simple_card(interaction.user, "Daily Reward", lines)
         file = discord.File(card, filename="daily.png")
         await interaction.followup.send("Your daily allowance, sir.", file=file)
 
