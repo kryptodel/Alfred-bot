@@ -6,7 +6,7 @@ import json
 import os
 import math
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont
 import aiohttp
 
 MEMORY_FILE = "memory.json"
@@ -204,6 +204,38 @@ async def create_profile_card(user: discord.User, data: dict) -> BytesIO:
     buffer.seek(0)
     return buffer
 
+async def create_simple_card(title: str, lines: list) -> BytesIO:
+    width, height = 700, 280
+    img = Image.new("RGBA", (width, height), (18, 18, 28, 255))
+    draw = ImageDraw.Draw(img)
+
+    for i in range(height):
+        r = int(18 + i * 0.04)
+        g = int(18 + i * 0.03)
+        b = int(28 + i * 0.07)
+        draw.line([(0, i), (width, i)], fill=(r, g, b, 255))
+
+    draw.rounded_rectangle([12, 12, width-12, height-12], radius=18, outline=(70, 70, 110, 180), width=2)
+
+    try:
+        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
+        font_text = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 22)
+    except:
+        font_title = ImageFont.load_default()
+        font_text = ImageFont.load_default()
+
+    draw.text((40, 35), title, font=font_title, fill=(230, 230, 255))
+
+    y = 95
+    for line in lines:
+        draw.text((40, y), line, font=font_text, fill=(190, 190, 220))
+        y += 38
+
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer
+
 class XPSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -228,18 +260,24 @@ class XPSystem(commands.Cog):
 
     @app_commands.command(name="level", description="Detailed information about your XP")
     async def level(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
         data, _ = get_user_xp_data(str(interaction.user.id))
         level = data["level"]
         xp = data["xp"]
         progress_xp, needed, percent = get_progress(xp)
+        title = get_rank_title(level)
 
-        embed = discord.Embed(title="📊 XP Information", description=f"Here is a detailed summary of your progress, **{interaction.user.display_name}**.", color=0x1a1a2e)
-        embed.add_field(name="Current Level", value=f"**{level}**", inline=True)
-        embed.add_field(name="Total XP", value=f"**{xp:,}**", inline=True)
-        embed.add_field(name="XP to Next Level", value=f"**{needed - progress_xp:,}**", inline=True)
-        embed.add_field(name="Progress", value=f"`{make_progress_bar(percent)}` {percent:.1f}%", inline=False)
-        embed.set_footer(text="Alfred Pennyworth • Knowledge is power")
-        await interaction.response.send_message(embed=embed)
+        lines = [
+            f"Level {level}  •  {title}",
+            f"Total XP: {xp:,}",
+            f"Progress: {progress_xp:,} / {needed:,} XP",
+            f"{percent:.1f}% to next level"
+        ]
+
+        card = await create_simple_card("XP Information", lines)
+        file = discord.File(card, filename="level.png")
+        await interaction.followup.send(file=file)
 
     @app_commands.command(name="leaderboard", description="Server XP ranking")
     async def leaderboard(self, interaction: discord.Interaction):
@@ -279,11 +317,14 @@ class XPSystem(commands.Cog):
         today = datetime.now().strftime("%Y-%m-%d")
 
         if data.get("last_daily") == today:
-            await interaction.response.send_message("You have already claimed your daily reward today, sir. Patience is a virtue.", ephemeral=True)
+            await interaction.response.send_message("You have already claimed your daily reward today, sir.", ephemeral=True)
             return
+
+        await interaction.response.defer()
 
         update_streak(user_id)
         data, _ = get_user_xp_data(user_id)
+
         bonus = data["streak"] * STREAK_BONUS
         total = DAILY_XP + bonus
 
@@ -299,14 +340,18 @@ class XPSystem(commands.Cog):
             memory[user_id] = data
             save_memory(memory)
 
-        embed = discord.Embed(title="📅 Daily Reward Claimed", description=f"As you wish, **{interaction.user.display_name}**.\n\nI have prepared your daily allowance.", color=0x2ecc71)
-        embed.add_field(name="XP Gained", value=f"**+{total} XP**", inline=True)
-        embed.add_field(name="Streak Bonus", value=f"+{bonus} XP", inline=True)
-        embed.add_field(name="Current Streak", value=f"**{data['streak']} days**", inline=True)
+        lines = [
+            f"+{total} XP received",
+            f"Streak bonus: +{bonus} XP",
+            f"Current streak: {data['streak']} days"
+        ]
+
         if leveled_up:
-            embed.add_field(name="🎉 Level Up!", value=f"You are now **Level {new_level}**!", inline=False)
-        embed.set_footer(text="Alfred Pennyworth • Consistency is admirable")
-        await interaction.response.send_message(embed=embed)
+            lines.append(f"Level up! You are now Level {new_level}")
+
+        card = await create_simple_card("Daily Reward", lines)
+        file = discord.File(card, filename="daily.png")
+        await interaction.followup.send("Your daily allowance, sir.", file=file)
 
     @app_commands.command(name="weekly", description="Claim your weekly XP reward")
     async def weekly(self, interaction: discord.Interaction):
