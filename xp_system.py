@@ -10,7 +10,8 @@ from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 import aiohttp
 
-MEMORY_FILE = "memory.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MEMORY_FILE = os.path.join(BASE_DIR, "memory.json")
 
 XP_PER_MESSAGE = 8
 DAILY_XP = 80
