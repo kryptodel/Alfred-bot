@@ -646,18 +646,22 @@ async def on_message(message: discord.Message):
         await bot.process_commands(message)
         return
 
-    # ====================== SISTEMA DE XP ======================
     try:
-        from xp_system import add_xp, update_streak
+        from xp_system import add_xp, update_streak, create_profile_card, get_user_xp_data
         update_streak(user_id)
         data, leveled_up, new_level = add_xp(user_id, 8)
+
         if leveled_up:
+            data, _ = get_user_xp_data(user_id)
+            card = await create_profile_card(message.author, data)
+            file = discord.File(card, filename="levelup.png")
+
             await message.channel.send(
-                f"🎉 Congratulations, **{message.author.display_name}**. You have reached **Level {new_level}**."
+                f"🎉 Congratulations, **{message.author.display_name}**. You have reached **Level {new_level}**.",
+                file=file
             )
     except Exception as e:
         print(f"Erro no XP: {e}", flush=True)
-    # ===========================================================
 
     positive_words = [
         "thank you",
