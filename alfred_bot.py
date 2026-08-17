@@ -134,7 +134,8 @@ bot = commands.Bot(
     intents=intents
 )
 
-MEMORY_FILE = "memory.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MEMORY_FILE = os.path.join(BASE_DIR, "memory.json")
 xp_loaded = False
 
 DC_CHARACTERS = [
