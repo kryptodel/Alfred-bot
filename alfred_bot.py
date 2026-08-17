@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands
-from discord import app_commands
 import os
 import json
 from datetime import datetime
@@ -79,18 +78,24 @@ async def get_ai_response(messages: list, max_tokens: int = 550):
             "name": "Logfare",
             "client": logfare_client,
             "model": "deepseek-v4-flash"
-        },
+        }
     ]
 
     last_error = None
 
     for provider in providers:
         if not provider["client"].api_key:
-            print(f"Pulando {provider['name']} (sem chave)", flush=True)
+            print(
+                f"Pulando {provider['name']} (sem chave)",
+                flush=True
+            )
             continue
 
         try:
-            print(f"Tentando {provider['name']}...", flush=True)
+            print(
+                f"Tentando {provider['name']}...",
+                flush=True
+            )
 
             response = provider["client"].chat.completions.create(
                 model=provider["model"],
@@ -99,16 +104,26 @@ async def get_ai_response(messages: list, max_tokens: int = 550):
                 max_tokens=max_tokens
             )
 
-            print(f"✅ {provider['name']} respondeu com sucesso!", flush=True)
+            print(
+                f"✅ {provider['name']} respondeu com sucesso!",
+                flush=True
+            )
 
             return response.choices[0].message.content
 
         except Exception as e:
             last_error = e
-            print(f"❌ {provider['name']} falhou: {type(e).__name__}", flush=True)
-            continue
 
-    raise last_error
+            print(
+                f"❌ {provider['name']} falhou: "
+                f"{type(e).__name__}: {e}",
+                flush=True
+            )
+
+    if last_error:
+        raise last_error
+
+    raise RuntimeError("Nenhum provedor de IA está configurado.")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -120,6 +135,7 @@ bot = commands.Bot(
 )
 
 MEMORY_FILE = "memory.json"
+xp_loaded = False
 
 DC_CHARACTERS = [
     "batman",
@@ -183,19 +199,43 @@ DC_CHARACTERS = [
 def load_memory():
     if os.path.exists(MEMORY_FILE):
         try:
-            with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+            with open(
+                MEMORY_FILE,
+                "r",
+                encoding="utf-8"
+            ) as f:
+                data = json.load(f)
+
+            if isinstance(data, dict):
+                return data
+
         except Exception as e:
-            print(f"Erro ao carregar memória: {e}", flush=True)
-            return {}
+            print(
+                f"Erro ao carregar memória: {e}",
+                flush=True
+            )
+
     return {}
 
 def save_memory(data):
     try:
-        with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        with open(
+            MEMORY_FILE,
+            "w",
+            encoding="utf-8"
+        ) as f:
+            json.dump(
+                data,
+                f,
+                ensure_ascii=False,
+                indent=2
+            )
+
     except Exception as e:
-        print(f"Erro ao salvar memória: {e}", flush=True)
+        print(
+            f"Erro ao salvar memória: {e}",
+            flush=True
+        )
 
 memory = load_memory()
 
@@ -228,12 +268,19 @@ def get_user_data(user_id: str):
 
     return data
 
-def update_relationship(user_id: str, change: int, reason: str = None):
+def update_relationship(
+    user_id: str,
+    change: int,
+    reason: str = None
+):
     data = get_user_data(user_id)
 
     data["relationship"] = max(
         0,
-        min(100, data["relationship"] + change)
+        min(
+            100,
+            data["relationship"] + change
+        )
     )
 
     data["interactions"] += 1
@@ -244,14 +291,16 @@ def update_relationship(user_id: str, change: int, reason: str = None):
             f"{datetime.now().strftime('%d/%m')}: {reason}"
         )
 
-        data["personality_notes"] = data["personality_notes"][-8:]
+        data["personality_notes"] = (
+            data["personality_notes"][-8:]
+        )
 
     save_memory(memory)
 
 def extract_name(text: str):
     patterns = [
         r"(?:my name is|i am|i'm|call me|you can call me|i go by)\s+([A-Za-zÀ-ÿ\s\-]{2,30})",
-        r"(?:name'?s)\s+([A-Za-zÀ-ÿ\s\-]{2,30})",
+        r"(?:name'?s)\s+([A-Za-zÀ-ÿ\s\-]{2,30})"
     ]
 
     for pattern in patterns:
@@ -285,12 +334,17 @@ def detect_dc_character(display_name: str):
 
     return None
 
-async def serve_coffee(channel_or_interaction, name: str, is_slash=False):
+async def serve_coffee(
+    channel_or_interaction,
+    name: str,
+    is_slash=False
+):
     embed = discord.Embed(
         title="☕ One coffee, coming right up",
         description=(
             f"As you wish, **{name}**.\n\n"
-            "*Alfred carefully places a perfectly prepared cup of coffee in front of you.*"
+            "*Alfred carefully places a perfectly prepared "
+            "cup of coffee in front of you.*"
         ),
         color=0x6F4E37
     )
@@ -366,7 +420,10 @@ CONVERSATION:
 - Do not explain your reasoning unless explicitly asked.
 """
 
-def build_system_prompt(user_data: dict, user_name: str):
+def build_system_prompt(
+    user_data: dict,
+    user_name: str
+):
     relationship = user_data["relationship"]
 
     preferred_name = (
@@ -379,7 +436,8 @@ def build_system_prompt(user_data: dict, user_name: str):
     if character:
         tone = (
             f"This user is roleplaying as {character}. "
-            "Treat them consistently with that character's personality, history and lore."
+            "Treat them consistently with that character's "
+            "personality, history and lore."
         )
 
     elif relationship >= 80:
@@ -396,17 +454,20 @@ def build_system_prompt(user_data: dict, user_name: str):
 
     elif relationship >= 40:
         tone = (
-            "Maintain a neutral but polite relationship with this user."
+            "Maintain a neutral but polite relationship "
+            "with this user."
         )
 
     elif relationship >= 20:
         tone = (
-            "Remain polite and slightly more reserved with this user."
+            "Remain polite and slightly more reserved "
+            "with this user."
         )
 
     else:
         tone = (
-            "Remain impeccably polite and somewhat distant with this user."
+            "Remain impeccably polite and somewhat distant "
+            "with this user."
         )
 
     if user_data["facts"]:
@@ -488,13 +549,22 @@ def keep_alive():
 
 @bot.event
 async def on_ready():
+    global xp_loaded
+
     print(
         f"Alfred is online as {bot.user}",
         flush=True
     )
 
     try:
-        await bot.load_extension("xp_system")
+        if not xp_loaded:
+            await bot.load_extension("xp_system")
+            xp_loaded = True
+            print(
+                "XP System carregado com sucesso.",
+                flush=True
+            )
+
         synced = await bot.tree.sync()
 
         print(
@@ -503,10 +573,12 @@ async def on_ready():
         )
 
     except Exception as e:
-        print(e, flush=True)
+        print(
+            f"Erro no on_ready: {type(e).__name__}: {e}",
+            flush=True
+        )
 
-
-    @bot.event
+@bot.event
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
@@ -514,35 +586,74 @@ async def on_message(message: discord.Message):
     user_id = str(message.author.id)
 
     try:
-        from xp_system import add_xp, update_streak, create_profile_card, get_user_xp_data
+        from xp_system import (
+            add_xp,
+            update_streak,
+            create_profile_card,
+            get_user_xp_data,
+            XP_PER_MESSAGE
+        )
 
         update_streak(user_id)
-        data, leveled_up, new_level = add_xp(user_id, 8)
+
+        data, leveled_up, new_level = add_xp(
+            user_id,
+            XP_PER_MESSAGE
+        )
+
+        data["total_messages_to_alfred"] = (
+            data.get("total_messages_to_alfred", 0) + 1
+        )
+
+        xp_memory = load_memory()
+
+        if user_id not in xp_memory:
+            xp_memory[user_id] = {}
+
+        xp_memory[user_id].update(data)
+
+        save_memory(xp_memory)
 
         print(
-            f"XP: {message.author.display_name} recebeu +8 XP",
+            f"XP: {message.author.display_name} "
+            f"recebeu +{XP_PER_MESSAGE} XP",
             flush=True
         )
 
         if leveled_up:
             data, _ = get_user_xp_data(user_id)
-            card = await create_profile_card(message.author, data)
-            file = discord.File(card, filename="levelup.png")
+
+            card = await create_profile_card(
+                message.author,
+                data
+            )
+
+            file = discord.File(
+                card,
+                filename="levelup.png"
+            )
 
             await message.channel.send(
-                f"🎉 Congratulations, **{message.author.display_name}**. "
+                f"🎉 Congratulations, "
+                f"**{message.author.display_name}**. "
                 f"You have reached **Level {new_level}**.",
                 file=file
             )
 
     except Exception as e:
-        print(f"Erro no XP: {type(e).__name__}: {e}", flush=True)
+        print(
+            f"Erro no XP: {type(e).__name__}: {e}",
+            flush=True
+        )
 
     content_lower = message.content.lower()
 
     user_data = get_user_data(user_id)
 
-    is_mentioned = bot.user in message.mentions
+    is_mentioned = (
+        bot.user is not None
+        and bot.user in message.mentions
+    )
 
     has_name = "alfred" in content_lower
 
@@ -586,7 +697,7 @@ async def on_message(message: discord.Message):
 
     for user in message.mentions:
         prompt = prompt.replace(
-            f"<@{user.id}",
+            f"<@{user.id}>",
             ""
         )
 
@@ -800,7 +911,7 @@ async def help_command(
             "`/ping` — Checks if I am operational\n"
             "`/coffee` — Alfred brings you a perfect cup of coffee\n\n"
             "**XP System**\n"
-            "`/rank` `/level` `/profile` `/leaderboard`\n"
+            "`/rank` `/level` `/ranking` `/profile`\n"
             "`/daily` `/weekly` `/streak` `/achievements`"
         ),
         color=0x1a1a2e
@@ -912,6 +1023,12 @@ async def coffee_command(
 
 if __name__ == "__main__":
     keep_alive()
-    bot.run(
-        os.getenv("DISCORD_TOKEN")
-)
+
+    token = os.getenv("DISCORD_TOKEN")
+
+    if not token:
+        raise RuntimeError(
+            "DISCORD_TOKEN não foi encontrado no .env"
+        )
+
+    bot.run(token)
