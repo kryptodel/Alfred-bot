@@ -494,6 +494,7 @@ async def on_ready():
     )
 
     try:
+        await bot.load_extension("xp_system")
         synced = await bot.tree.sync()
 
         print(
@@ -645,6 +646,19 @@ async def on_message(message: discord.Message):
         await bot.process_commands(message)
         return
 
+    # ====================== SISTEMA DE XP ======================
+    try:
+        from xp_system import add_xp, update_streak
+        update_streak(user_id)
+        data, leveled_up, new_level = add_xp(user_id, 8)
+        if leveled_up:
+            await message.channel.send(
+                f"🎉 Congratulations, **{message.author.display_name}**. You have reached **Level {new_level}**."
+            )
+    except Exception as e:
+        print(f"Erro no XP: {e}", flush=True)
+    # ===========================================================
+
     positive_words = [
         "thank you",
         "thanks",
@@ -782,7 +796,10 @@ async def help_command(
             "`/help` — Shows this message\n"
             "`/status` — Shows what I remember about you\n"
             "`/ping` — Checks if I am operational\n"
-            "`/coffee` — Alfred brings you a perfect cup of coffee"
+            "`/coffee` — Alfred brings you a perfect cup of coffee\n\n"
+            "**XP System**\n"
+            "`/rank` `/level` `/profile` `/leaderboard`\n"
+            "`/daily` `/weekly` `/streak` `/achievements`"
         ),
         color=0x1a1a2e
     )
@@ -895,4 +912,4 @@ if __name__ == "__main__":
     keep_alive()
     bot.run(
         os.getenv("DISCORD_TOKEN")
-            )
+)
