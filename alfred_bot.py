@@ -505,28 +505,46 @@ async def on_ready():
     except Exception as e:
         print(e, flush=True)
 
-@bot.event
+
+    @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
+    user_id = str(message.author.id)
+
+    try:
+        from xp_system import add_xp, update_streak, create_profile_card, get_user_xp_data
+
+        update_streak(user_id)
+        data, leveled_up, new_level = add_xp(user_id, 8)
+
+        print(
+            f"XP: {message.author.display_name} recebeu +8 XP",
+            flush=True
+        )
+
+        if leveled_up:
+            data, _ = get_user_xp_data(user_id)
+            card = await create_profile_card(message.author, data)
+            file = discord.File(card, filename="levelup.png")
+
+            await message.channel.send(
+                f"🎉 Congratulations, **{message.author.display_name}**. "
+                f"You have reached **Level {new_level}**.",
+                file=file
+            )
+
+    except Exception as e:
+        print(f"Erro no XP: {type(e).__name__}: {e}", flush=True)
+
     content_lower = message.content.lower()
 
-    user_id = str(
-        message.author.id
-    )
+    user_data = get_user_data(user_id)
 
-    user_data = get_user_data(
-        user_id
-    )
+    is_mentioned = bot.user in message.mentions
 
-    is_mentioned = (
-        bot.user in message.mentions
-    )
-
-    has_name = (
-        "alfred" in content_lower
-    )
+    has_name = "alfred" in content_lower
 
     if not (is_mentioned or has_name):
         await bot.process_commands(message)
@@ -561,17 +579,14 @@ async def on_message(message: discord.Message):
         save_memory(memory)
 
     if not user_data["name"]:
-        user_data["name"] = (
-            message.author.display_name
-        )
-
+        user_data["name"] = message.author.display_name
         save_memory(memory)
 
     prompt = message.content
 
     for user in message.mentions:
         prompt = prompt.replace(
-            f"<@{user.id}>",
+            f"<@{user.id}",
             ""
         )
 
@@ -645,23 +660,6 @@ async def on_message(message: discord.Message):
 
         await bot.process_commands(message)
         return
-
-    try:
-        from xp_system import add_xp, update_streak, create_profile_card, get_user_xp_data
-        update_streak(user_id)
-        data, leveled_up, new_level = add_xp(user_id, 8)
-
-        if leveled_up:
-            data, _ = get_user_xp_data(user_id)
-            card = await create_profile_card(message.author, data)
-            file = discord.File(card, filename="levelup.png")
-
-            await message.channel.send(
-                f"🎉 Congratulations, **{message.author.display_name}**. You have reached **Level {new_level}**.",
-                file=file
-            )
-    except Exception as e:
-        print(f"Erro no XP: {e}", flush=True)
 
     positive_words = [
         "thank you",
