@@ -36,37 +36,17 @@ def get_progress(xp: int):
     progress_xp = xp - current_level_xp
     needed = next_level_xp - current_level_xp
 
-    percent = (
-        (progress_xp / needed) * 100
-        if needed > 0
-        else 100
-    )
-
-    percent = max(
-        0,
-        min(100, percent)
-    )
+    percent = (progress_xp / needed) * 100 if needed > 0 else 100
+    percent = max(0, min(100, percent))
 
     return progress_xp, needed, percent
 
 
-def make_progress_bar(
-    percent: float,
-    length: int = 12
-) -> str:
-    filled = int(
-        percent / 100 * length
-    )
+def make_progress_bar(percent: float, length: int = 12) -> str:
+    filled = int(percent / 100 * length)
+    filled = max(0, min(length, filled))
 
-    filled = max(
-        0,
-        min(length, filled)
-    )
-
-    return (
-        "█" * filled
-        + "░" * (length - filled)
-    )
+    return "█" * filled + "░" * (length - filled)
 
 
 RANK_TITLES = {
@@ -87,9 +67,7 @@ RANK_TITLES = {
 def get_rank_title(level: int) -> str:
     title = "Newcomer"
 
-    for lvl, name in sorted(
-        RANK_TITLES.items()
-    ):
+    for lvl, name in sorted(RANK_TITLES.items()):
         if level >= lvl:
             title = name
 
@@ -141,51 +119,50 @@ ACHIEVEMENTS = {
 
 
 def load_memory():
-    if os.path.exists(MEMORY_FILE):
-        try:
-            with open(
-                MEMORY_FILE,
-                "r",
-                encoding="utf-8"
-            ) as f:
-                data = json.load(f)
+    if not os.path.exists(MEMORY_FILE):
+        return {}
 
-            if isinstance(data, dict):
-                return data
+    try:
+        with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
 
-        except Exception as e:
-            print(
-                f"Erro ao carregar memory.json no XP: {e}",
-                flush=True
-            )
+        if isinstance(data, dict):
+            return data
+
+    except Exception as e:
+        print(f"Erro ao carregar memory.json no XP: {e}", flush=True)
 
     return {}
 
 
 def save_memory(data):
-    with open(
-        MEMORY_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-        json.dump(
-            data,
-            f,
-            ensure_ascii=False,
-            indent=2
-        )
+    try:
+        temp_file = MEMORY_FILE + ".tmp"
+
+        with open(temp_file, "w", encoding="utf-8") as f:
+            json.dump(
+                data,
+                f,
+                ensure_ascii=False,
+                indent=2
+            )
+
+        os.replace(temp_file, MEMORY_FILE)
+
+    except Exception as e:
+        print(f"Erro ao salvar memory.json no XP: {e}", flush=True)
 
 
 def get_user_xp_data(user_id: str):
     memory = load_memory()
 
-    if user_id not in memory:
+    if user_id not in memory or not isinstance(memory[user_id], dict):
         memory[user_id] = {}
 
     data = memory[user_id]
 
     data.setdefault("xp", 0)
-    data.setdefault("level", 1)
+    data.setdefault("level", get_level_from_xp(data.get("xp", 0)))
     data.setdefault("last_daily", None)
     data.setdefault("last_weekly", None)
     data.setdefault("streak", 0)
@@ -195,169 +172,98 @@ def get_user_xp_data(user_id: str):
     data.setdefault("coffee_count", 0)
     data.setdefault("total_messages_to_alfred", 0)
 
+    data["xp"] = max(0, int(data.get("xp", 0)))
+    data["level"] = get_level_from_xp(data["xp"])
+
     return data, memory
 
 
-def add_xp(
-    user_id: str,
-    amount: int
-):
+def add_xp(user_id: str, amount: int):
     data, memory = get_user_xp_data(user_id)
 
-    old_level = get_level_from_xp(
-        data["xp"]
-    )
+    old_level = get_level_from_xp(data["xp"])
 
-    data["xp"] += max(
-        0,
-        amount
-    )
+    data["xp"] += max(0, int(amount))
 
-    new_level = get_level_from_xp(
-        data["xp"]
-    )
-
+    new_level = get_level_from_xp(data["xp"])
     data["level"] = new_level
 
-    if (
-        new_level >= 5
-        and "level_5" not in data["achievements"]
-    ):
-        data["achievements"].append(
-            "level_5"
-        )
+    if new_level >= 5 and "level_5" not in data["achievements"]:
+        data["achievements"].append("level_5")
 
-    if (
-        new_level >= 10
-        and "level_10" not in data["achievements"]
-    ):
-        data["achievements"].append(
-            "level_10"
-        )
+    if new_level >= 10 and "level_10" not in data["achievements"]:
+        data["achievements"].append("level_10")
 
-    if (
-        new_level >= 20
-        and "level_20" not in data["achievements"]
-    ):
-        data["achievements"].append(
-            "level_20"
-        )
+    if new_level >= 20 and "level_20" not in data["achievements"]:
+        data["achievements"].append("level_20")
 
     if (
         data["total_messages_to_alfred"] >= 1
         and "first_steps" not in data["achievements"]
     ):
-        data["achievements"].append(
-            "first_steps"
-        )
+        data["achievements"].append("first_steps")
 
     memory[user_id] = data
-
     save_memory(memory)
 
-    return (
-        data,
-        new_level > old_level,
-        new_level
-    )
+    return data, new_level > old_level, new_level
 
 
 def update_streak(user_id: str):
-    data, memory = get_user_xp_data(
-        user_id
-    )
+    data, memory = get_user_xp_data(user_id)
 
-    today = datetime.now().strftime(
-        "%Y-%m-%d"
-    )
-
-    last = data.get(
-        "last_active_date"
-    )
+    today = datetime.now().strftime("%Y-%m-%d")
+    last = data.get("last_active_date")
 
     if last == today:
         return data
 
     if last:
         try:
-            last_date = datetime.strptime(
-                last,
-                "%Y-%m-%d"
-            )
-
-            diff = (
-                datetime.now() - last_date
-            ).days
+            last_date = datetime.strptime(last, "%Y-%m-%d")
+            diff = (datetime.now() - last_date).days
 
             if diff == 1:
                 data["streak"] += 1
-
             elif diff > 1:
                 data["streak"] = 1
 
         except ValueError:
             data["streak"] = 1
-
     else:
         data["streak"] = 1
 
     data["last_active_date"] = today
 
-    if (
-        data["streak"] >= 7
-        and "streak_7" not in data["achievements"]
-    ):
-        data["achievements"].append(
-            "streak_7"
-        )
+    if data["streak"] >= 7 and "streak_7" not in data["achievements"]:
+        data["achievements"].append("streak_7")
 
-    if (
-        data["streak"] >= 30
-        and "streak_30" not in data["achievements"]
-    ):
-        data["achievements"].append(
-            "streak_30"
-        )
+    if data["streak"] >= 30 and "streak_30" not in data["achievements"]:
+        data["achievements"].append("streak_30")
 
     memory[user_id] = data
-
     save_memory(memory)
 
     return data
 
 
-async def get_avatar(
-    user: discord.User,
-    size=140
-):
+async def get_avatar(user: discord.User, size=140):
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(
-                str(user.display_avatar.url)
-            ) as resp:
-
+            async with session.get(str(user.display_avatar.url)) as resp:
                 if resp.status != 200:
                     return None
 
                 avatar_data = await resp.read()
 
         avatar = (
-            Image.open(
-                BytesIO(avatar_data)
-            )
+            Image.open(BytesIO(avatar_data))
             .convert("RGBA")
             .resize((size, size))
         )
 
-        mask = Image.new(
-            "L",
-            (size, size),
-            0
-        )
-
-        mask_draw = ImageDraw.Draw(
-            mask
-        )
+        mask = Image.new("L", (size, size), 0)
+        mask_draw = ImageDraw.Draw(mask)
 
         mask_draw.ellipse(
             (0, 0, size, size),
@@ -372,36 +278,21 @@ async def get_avatar(
         return None
 
 
-def get_font(
-    path: str,
-    size: int
-):
+def get_font(path: str, size: int):
     try:
-        return ImageFont.truetype(
-            path,
-            size
-        )
+        return ImageFont.truetype(path, size)
     except Exception:
         return ImageFont.load_default()
 
 
-async def create_profile_card(
-    user: discord.User,
-    data: dict
-) -> BytesIO:
-
+async def create_profile_card(user: discord.User, data: dict) -> BytesIO:
     level = data["level"]
     xp = data["xp"]
 
-    progress_xp, needed, percent = (
-        get_progress(xp)
-    )
+    progress_xp, needed, percent = get_progress(xp)
 
     title = get_rank_title(level)
-    streak = data.get(
-        "streak",
-        0
-    )
+    streak = data.get("streak", 0)
 
     width = 900
     height = 320
@@ -425,29 +316,16 @@ async def create_profile_card(
         )
 
     draw.rounded_rectangle(
-        [
-            15,
-            15,
-            width - 15,
-            height - 15
-        ],
+        [15, 15, width - 15, height - 15],
         radius=20,
         outline=(80, 80, 120, 180),
         width=2
     )
 
-    avatar = await get_avatar(
-        user,
-        160
-    )
+    avatar = await get_avatar(user, 160)
 
     if avatar:
-        img.paste(
-            avatar,
-            (40, 70),
-            avatar
-        )
-
+        img.paste(avatar, (40, 70), avatar)
     else:
         draw.ellipse(
             [40, 70, 200, 230],
@@ -472,10 +350,7 @@ async def create_profile_card(
     display_name = user.display_name
 
     if len(display_name) > 24:
-        display_name = (
-            display_name[:21]
-            + "..."
-        )
+        display_name = display_name[:21] + "..."
 
     draw.text(
         (230, 50),
@@ -522,11 +397,7 @@ async def create_profile_card(
         fill=(40, 40, 60)
     )
 
-    fill_width = int(
-        bar_width * (
-            percent / 100
-        )
-    )
+    fill_width = int(bar_width * (percent / 100))
 
     if fill_width > 0:
         draw.rounded_rectangle(
@@ -541,10 +412,7 @@ async def create_profile_card(
         )
 
     draw.text(
-        (
-            bar_x,
-            bar_y - 28
-        ),
+        (bar_x, bar_y - 28),
         f"{progress_xp:,} / {needed:,} XP  ({percent:.1f}%)",
         font=font_small,
         fill=(200, 200, 230)
@@ -552,11 +420,7 @@ async def create_profile_card(
 
     buffer = BytesIO()
 
-    img.save(
-        buffer,
-        format="PNG"
-    )
-
+    img.save(buffer, format="PNG")
     buffer.seek(0)
 
     return buffer
@@ -590,12 +454,7 @@ async def create_simple_card(
         )
 
     draw.rounded_rectangle(
-        [
-            12,
-            12,
-            width - 12,
-            height - 12
-        ],
+        [12, 12, width - 12, height - 12],
         radius=18,
         outline=(70, 70, 110, 180),
         width=2
@@ -630,10 +489,7 @@ async def create_simple_card(
 
         y += 38
 
-    avatar = await get_avatar(
-        user,
-        130
-    )
+    avatar = await get_avatar(user, 130)
 
     if avatar:
         img.paste(
@@ -641,7 +497,6 @@ async def create_simple_card(
             (width - 170, 70),
             avatar
         )
-
     else:
         draw.ellipse(
             [
@@ -655,31 +510,18 @@ async def create_simple_card(
 
     buffer = BytesIO()
 
-    img.save(
-        buffer,
-        format="PNG"
-    )
-
+    img.save(buffer, format="PNG")
     buffer.seek(0)
 
     return buffer
 
 
-async def create_leaderboard_card(
-    bot,
-    ranking: list
-) -> BytesIO:
-
+async def create_leaderboard_card(ranking: list) -> BytesIO:
     row_height = 55
     header_height = 70
 
-    height = (
-        header_height
-        + len(ranking) * row_height
-        + 30
-    )
-
-    width = 800
+    height = header_height + len(ranking) * row_height + 30
+    width = 900
 
     img = Image.new(
         "RGBA",
@@ -700,12 +542,7 @@ async def create_leaderboard_card(
         )
 
     draw.rounded_rectangle(
-        [
-            10,
-            10,
-            width - 10,
-            height - 10
-        ],
+        [10, 10, width - 10, height - 10],
         radius=16,
         outline=(70, 70, 110, 160),
         width=2
@@ -733,23 +570,8 @@ async def create_leaderboard_card(
         fill=(230, 230, 255)
     )
 
-    medals = [
-        "1.",
-        "2.",
-        "3."
-    ]
-
-    for i, (
-        user_id,
-        xp,
-        level,
-        name
-    ) in enumerate(ranking):
-
-        y = (
-            header_height
-            + i * row_height
-        )
+    for i, (user_id, xp, level, name) in enumerate(ranking):
+        y = header_height + i * row_height
 
         if i % 2 == 0:
             draw.rectangle(
@@ -762,64 +584,61 @@ async def create_leaderboard_card(
                 fill=(30, 30, 45, 180)
             )
 
-        pos = (
-            medals[i]
-            if i < 3
-            else f"{i + 1}."
-        )
+        if i == 0:
+            pos = "🥇"
+        elif i == 1:
+            pos = "🥈"
+        elif i == 2:
+            pos = "🥉"
+        else:
+            pos = f"{i + 1}."
 
         draw.text(
-            (35, y + 14),
+            (30, y + 14),
             pos,
             font=font_row,
-            fill=(200, 200, 230)
+            fill=(230, 230, 255)
         )
 
         display_name = (
-            name[:22] + "..."
-            if len(name) > 22
+            name[:25] + "..."
+            if len(name) > 25
             else name
         )
 
         draw.text(
-            (90, y + 14),
+            (95, y + 14),
             display_name,
             font=font_row,
             fill=(230, 230, 255)
         )
 
         draw.text(
-            (420, y + 14),
-            f"Lvl {level}",
+            (460, y + 14),
+            f"Level {level}",
             font=font_row,
             fill=(160, 180, 255)
         )
 
         draw.text(
-            (540, y + 14),
+            (600, y + 14),
             f"{xp:,} XP",
             font=font_small,
             fill=(170, 170, 200)
         )
 
-        title = get_rank_title(
-            level
-        )
+        title = get_rank_title(level)
 
         draw.text(
-            (680, y + 16),
-            title[:14],
+            (735, y + 16),
+            title[:18],
             font=font_small,
             fill=(140, 140, 180)
         )
 
     buffer = BytesIO()
 
-    img.save(
-        buffer,
-        format="PNG"
-    )
-
+    img.save(buffer, format="PNG")
     buffer.seek(0)
 
     return buffer
@@ -834,33 +653,18 @@ class XPSystem(commands.Cog):
         name="rank",
         description="Shows your current level and rank"
     )
-    async def rank(
-        self,
-        interaction: discord.Interaction
-    ):
-        data, _ = get_user_xp_data(
-            str(interaction.user.id)
-        )
+    async def rank(self, interaction: discord.Interaction):
+        data, _ = get_user_xp_data(str(interaction.user.id))
 
         level = data["level"]
         xp = data["xp"]
 
-        progress_xp, needed, percent = (
-            get_progress(xp)
-        )
-
-        title = get_rank_title(
-            level
-        )
-
-        bar = make_progress_bar(
-            percent
-        )
+        progress_xp, needed, percent = get_progress(xp)
+        title = get_rank_title(level)
+        bar = make_progress_bar(percent)
 
         embed = discord.Embed(
-            title=(
-                f"🎩 {interaction.user.display_name}'s Rank"
-            ),
+            title=f"🎩 {interaction.user.display_name}'s Rank",
             color=0x1a1a2e
         )
 
@@ -899,34 +703,22 @@ class XPSystem(commands.Cog):
             text="Alfred Pennyworth • Always keeping score"
         )
 
-        await interaction.response.send_message(
-            embed=embed
-        )
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(
         name="level",
         description="Detailed information about your XP"
     )
-    async def level(
-        self,
-        interaction: discord.Interaction
-    ):
+    async def level(self, interaction: discord.Interaction):
         await interaction.response.defer()
 
-        data, _ = get_user_xp_data(
-            str(interaction.user.id)
-        )
+        data, _ = get_user_xp_data(str(interaction.user.id))
 
         level = data["level"]
         xp = data["xp"]
 
-        progress_xp, needed, percent = (
-            get_progress(xp)
-        )
-
-        title = get_rank_title(
-            level
-        )
+        progress_xp, needed, percent = get_progress(xp)
+        title = get_rank_title(level)
 
         lines = [
             f"Level {level}  •  {title}",
@@ -941,27 +733,20 @@ class XPSystem(commands.Cog):
             lines
         )
 
-        file = discord.File(
-            card,
-            filename="level.png"
-        )
+        file = discord.File(card, filename="level.png")
 
-        await interaction.followup.send(
-            file=file
-        )
+        await interaction.followup.send(file=file)
+
     @app_commands.command(
         name="ranking",
-        description="Shows the server XP ranking"
+        description="Shows the XP ranking of this server"
     )
-    async def leaderboard(
-        self,
-        interaction: discord.Interaction
-    ):
+    async def leaderboard(self, interaction: discord.Interaction):
         await interaction.response.defer()
 
         if interaction.guild is None:
             await interaction.followup.send(
-                "This command can only be used inside a server."
+                "This command can only be used inside a server, sir."
             )
             return
 
@@ -979,11 +764,13 @@ class XPSystem(commands.Cog):
             if not isinstance(data, dict):
                 continue
 
-            xp = data.get("xp", 0)
-            level = data.get("level", 1)
+            xp = int(data.get("xp", 0))
+            level = int(data.get("level", get_level_from_xp(xp)))
 
             if xp <= 0:
                 continue
+
+            level = get_level_from_xp(xp)
 
             ranking.append(
                 (
@@ -1006,112 +793,64 @@ class XPSystem(commands.Cog):
 
         if not ranking:
             await interaction.followup.send(
-                "No one in this server has earned XP yet, sir."
+                "No one has earned XP in this server yet, sir."
             )
             return
 
-        card = await create_leaderboard_card(
-            self.bot,
-            ranking
-        )
+        card = await create_leaderboard_card(ranking)
 
         file = discord.File(
             card,
             filename="leaderboard.png"
         )
 
-        await interaction.followup.send(
-            file=file
-        )
-        
+        await interaction.followup.send(file=file)
+
     @app_commands.command(
         name="daily",
         description="Claim your daily XP reward"
     )
-    async def daily(
-        self,
-        interaction: discord.Interaction
-    ):
-        user_id = str(
-            interaction.user.id
-        )
+    async def daily(self, interaction: discord.Interaction):
+        user_id = str(interaction.user.id)
 
-        data, memory = get_user_xp_data(
-            user_id
-        )
+        data, memory = get_user_xp_data(user_id)
 
-        today = datetime.now().strftime(
-            "%Y-%m-%d"
-        )
+        today = datetime.now().strftime("%Y-%m-%d")
 
-        if data.get(
-            "last_daily"
-        ) == today:
-
+        if data.get("last_daily") == today:
             await interaction.response.send_message(
                 "You have already claimed your daily reward today, sir.",
                 ephemeral=True
             )
-
             return
 
         await interaction.response.defer()
 
-        update_streak(
-            user_id
-        )
+        update_streak(user_id)
 
-        data, memory = get_user_xp_data(
-            user_id
-        )
+        data, memory = get_user_xp_data(user_id)
 
-        bonus = (
-            data["streak"]
-            * STREAK_BONUS
-        )
-
-        total = (
-            DAILY_XP
-            + bonus
-        )
+        bonus = data["streak"] * STREAK_BONUS
+        total = DAILY_XP + bonus
 
         data["last_daily"] = today
+        data["daily_claims"] = data.get("daily_claims", 0) + 1
 
-        data["daily_claims"] = (
-            data.get(
-                "daily_claims",
-                0
-            ) + 1
-        )
+        if (
+            data["daily_claims"] >= 10
+            and "daily_10" not in data["achievements"]
+        ):
+            data["achievements"].append("daily_10")
 
         memory[user_id] = data
-
-        save_memory(
-            memory
-        )
+        save_memory(memory)
 
         result, leveled_up, new_level = add_xp(
             user_id,
             total
         )
 
-        data, memory = get_user_xp_data(
-            user_id
-        )
-
-        if (
-            data["daily_claims"] >= 10
-            and "daily_10" not in data["achievements"]
-        ):
-            data["achievements"].append(
-                "daily_10"
-            )
-
-            memory[user_id] = data
-
-            save_memory(
-                memory
-            )
+        data, _ = get_user_xp_data(user_id)
 
         lines = [
             f"+{total} XP received",
@@ -1144,40 +883,24 @@ class XPSystem(commands.Cog):
         name="weekly",
         description="Claim your weekly XP reward"
     )
-    async def weekly(
-        self,
-        interaction: discord.Interaction
-    ):
-        user_id = str(
-            interaction.user.id
-        )
+    async def weekly(self, interaction: discord.Interaction):
+        user_id = str(interaction.user.id)
 
-        data, memory = get_user_xp_data(
-            user_id
-        )
+        data, memory = get_user_xp_data(user_id)
 
-        week_id = datetime.now().strftime(
-            "%Y-W%W"
-        )
+        week_id = datetime.now().strftime("%Y-W%W")
 
-        if data.get(
-            "last_weekly"
-        ) == week_id:
-
+        if data.get("last_weekly") == week_id:
             await interaction.response.send_message(
                 "You have already claimed your weekly reward this week, sir.",
                 ephemeral=True
             )
-
             return
 
         data["last_weekly"] = week_id
 
         memory[user_id] = data
-
-        save_memory(
-            memory
-        )
+        save_memory(memory)
 
         result, leveled_up, new_level = add_xp(
             user_id,
@@ -1197,9 +920,7 @@ class XPSystem(commands.Cog):
         if leveled_up:
             embed.add_field(
                 name="🎉 Level Up!",
-                value=(
-                    f"You are now **Level {new_level}**!"
-                ),
+                value=f"You are now **Level {new_level}**!",
                 inline=False
             )
 
@@ -1210,26 +931,16 @@ class XPSystem(commands.Cog):
             )
         )
 
-        await interaction.response.send_message(
-            embed=embed
-        )
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(
         name="streak",
         description="Shows your current activity streak"
     )
-    async def streak(
-        self,
-        interaction: discord.Interaction
-    ):
-        data, _ = get_user_xp_data(
-            str(interaction.user.id)
-        )
+    async def streak(self, interaction: discord.Interaction):
+        data, _ = get_user_xp_data(str(interaction.user.id))
 
-        streak = data.get(
-            "streak",
-            0
-        )
+        streak = data.get("streak", 0)
 
         embed = discord.Embed(
             title="🔥 Activity Streak",
@@ -1248,51 +959,33 @@ class XPSystem(commands.Cog):
                 value="Impressive dedication.",
                 inline=False
             )
-
         elif streak >= 3:
             embed.add_field(
                 name="Status",
                 value="Building good habits.",
                 inline=False
             )
-
         else:
             embed.add_field(
                 name="Status",
-                value=(
-                    "A modest beginning. "
-                    "Do keep it up."
-                ),
+                value="A modest beginning. Do keep it up.",
                 inline=False
             )
 
         embed.set_footer(
-            text=(
-                "Alfred Pennyworth • "
-                "Consistency builds character"
-            )
+            text="Alfred Pennyworth • Consistency builds character"
         )
 
-        await interaction.response.send_message(
-            embed=embed
-        )
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(
         name="achievements",
         description="Shows your unlocked achievements"
     )
-    async def achievements(
-        self,
-        interaction: discord.Interaction
-    ):
-        data, _ = get_user_xp_data(
-            str(interaction.user.id)
-        )
+    async def achievements(self, interaction: discord.Interaction):
+        data, _ = get_user_xp_data(str(interaction.user.id))
 
-        unlocked = data.get(
-            "achievements",
-            []
-        )
+        unlocked = data.get("achievements", [])
 
         if not unlocked:
             await interaction.response.send_message(
@@ -1300,7 +993,6 @@ class XPSystem(commands.Cog):
                 "Perhaps more time spent in productive conversation would help.",
                 ephemeral=True
             )
-
             return
 
         description = ""
@@ -1322,29 +1014,21 @@ class XPSystem(commands.Cog):
 
         embed.set_footer(
             text=(
-                f"{len(unlocked)}/"
-                f"{len(ACHIEVEMENTS)} unlocked "
+                f"{len(unlocked)}/{len(ACHIEVEMENTS)} unlocked "
                 "• Alfred Pennyworth"
             )
         )
 
-        await interaction.response.send_message(
-            embed=embed
-        )
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(
         name="profile",
         description="Shows your complete profile card"
     )
-    async def profile(
-        self,
-        interaction: discord.Interaction
-    ):
+    async def profile(self, interaction: discord.Interaction):
         await interaction.response.defer()
 
-        data, _ = get_user_xp_data(
-            str(interaction.user.id)
-        )
+        data, _ = get_user_xp_data(str(interaction.user.id))
 
         card = await create_profile_card(
             interaction.user,
@@ -1356,12 +1040,8 @@ class XPSystem(commands.Cog):
             filename="profile.png"
         )
 
-        await interaction.followup.send(
-            file=file
-        )
+        await interaction.followup.send(file=file)
 
 
 async def setup(bot):
-    await bot.add_cog(
-        XPSystem(bot)
-        )
+    await bot.add_cog(XPSystem(bot))
